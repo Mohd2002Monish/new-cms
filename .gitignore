@@ -1,25 +1,81 @@
-# Dependencies
+# ===========================
+# Dependencies - ALL levels
+# ===========================
 node_modules/
-*/node_modules/
+**/node_modules/
 
+# ===========================
 # Environment files
+# ===========================
 .env
 .env.local
+.env.development.local
+.env.test.local
+.env.production.local
 .env.production
+**/.env
+**/.env.local
+**/.env.production
 
+# ===========================
 # Build output
+# ===========================
 dist/
 build/
 .next/
+out/
+**/dist/
+**/build/
+**/.next/
+**/out/
 
+# ===========================
 # Logs
+# ===========================
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+logs/
 
-# OS files
+# ===========================
+# OS / System files
+# ===========================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
 
-# IDE
+# ===========================
+# IDE & Editor files
+# ===========================
 .vscode/
 .idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ===========================
+# Testing / Coverage
+# ===========================
+coverage/
+**/coverage/
+*.tsbuildinfo
+
+# ===========================
+# Misc
+# ===========================
+*.pem
+.vercel
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
