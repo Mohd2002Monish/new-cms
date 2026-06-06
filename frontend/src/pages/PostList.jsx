@@ -35,6 +35,19 @@ export default function PostList() {
   const [scheduledPublishTime, setScheduledPublishTime] = useState('00:00');
   const [showDeleted, setShowDeleted] = useState(false);
 
+  // Filter states
+  const [categoryFilter, setCategoryFilter] = useState(null);
+  const [postStatusFilter, setPostStatusFilter] = useState(null);
+  const [activePopover, setActivePopover] = useState(null); // 'category' | 'status' | null
+  const [tempCategoryFilter, setTempCategoryFilter] = useState(null);
+  const [tempPostStatusFilter, setTempPostStatusFilter] = useState(null);
+
+  const filteredPosts = posts.filter((post) => {
+    if (categoryFilter && post.category?.name !== categoryFilter) return false;
+    if (postStatusFilter && post.status !== postStatusFilter) return false;
+    return true;
+  });
+
   const status = searchParams.get('status') || '';
   const page = parseInt(searchParams.get('page') || '1');
 
@@ -189,119 +202,257 @@ export default function PostList() {
             <p className="font-medium">No posts found.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" style={{ minHeight: activePopover ? '300px' : 'auto' }}>
+            {activePopover && (
+              <div className="fixed inset-0 z-30" onClick={() => setActivePopover(null)} />
+            )}
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
                   <th className="px-6 py-3 text-left font-semibold text-slate-600">Title</th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-600">Author</th>
-                  <th className="px-6 py-3 text-left font-semibold text-slate-600">Category</th>
-                  <th className="px-6 py-3 text-left font-semibold text-slate-600">Status</th>
+                  <th className="px-6 py-3 text-left font-semibold text-slate-600 relative">
+                    <div className="flex items-center gap-1.5 cursor-pointer select-none group" onClick={() => {
+                      setActivePopover(activePopover === 'category' ? null : 'category');
+                      setTempCategoryFilter(categoryFilter);
+                    }}>
+                      <span>Category</span>
+                      <span className={`p-0.5 rounded hover:bg-slate-200 transition-colors ${categoryFilter ? 'text-theme-purple bg-purple-50' : 'text-slate-400'}`}>
+                        <svg className="w-3.5 h-3.5" fill={categoryFilter ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                      </span>
+                      {categoryFilter && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-theme-purple" title="Filter applied" />
+                      )}
+                    </div>
+
+                    {activePopover === 'category' && (
+                      <div className="absolute left-6 top-full mt-1 w-52 bg-white border border-slate-150 rounded-2xl shadow-xl p-4 z-40 text-slate-700 font-normal">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Filter by Category</div>
+                        <div className="space-y-1 mb-4 max-h-40 overflow-y-auto">
+                          {Array.from(new Set(posts.map(p => p.category?.name).filter(Boolean))).sort().map((cat) => (
+                            <label key={cat} className="flex items-center gap-2 cursor-pointer text-xs py-1.5 hover:bg-slate-50 px-2 rounded-lg transition-colors">
+                              <input
+                                type="radio"
+                                name="category-filter"
+                                checked={tempCategoryFilter === cat}
+                                onChange={() => setTempCategoryFilter(cat)}
+                                className="w-3.5 h-3.5 text-theme-purple border-slate-300 focus:ring-theme-purple"
+                              />
+                              <span className="truncate">{cat}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex gap-2 border-t border-slate-100 pt-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCategoryFilter(null);
+                              setTempCategoryFilter(null);
+                              setActivePopover(null);
+                            }}
+                            className="flex-1 py-1 border border-slate-250 rounded-lg text-[10px] font-bold text-slate-500 hover:bg-slate-50 transition-colors"
+                          >
+                            Clear
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCategoryFilter(tempCategoryFilter);
+                              setActivePopover(null);
+                            }}
+                            className="flex-1 py-1 bg-theme-purple text-white rounded-lg text-[10px] font-bold hover:bg-purple-600 transition-colors"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </th>
+                  <th className="px-6 py-3 text-left font-semibold text-slate-600 relative">
+                    <div className="flex items-center gap-1.5 cursor-pointer select-none group" onClick={() => {
+                      setActivePopover(activePopover === 'status' ? null : 'status');
+                      setTempPostStatusFilter(postStatusFilter);
+                    }}>
+                      <span>Status</span>
+                      <span className={`p-0.5 rounded hover:bg-slate-200 transition-colors ${postStatusFilter ? 'text-theme-purple bg-purple-50' : 'text-slate-400'}`}>
+                        <svg className="w-3.5 h-3.5" fill={postStatusFilter ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                      </span>
+                      {postStatusFilter && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-theme-purple" title="Filter applied" />
+                      )}
+                    </div>
+
+                    {activePopover === 'status' && (
+                      <div className="absolute left-6 top-full mt-1 w-52 bg-white border border-slate-150 rounded-2xl shadow-xl p-4 z-40 text-slate-700 font-normal">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Filter by Status</div>
+                        <div className="space-y-1 mb-4">
+                          {['draft', 'pending_approval', 'approved', 'scheduled', 'live', 'rejected'].map((s) => (
+                            <label key={s} className="flex items-center gap-2 cursor-pointer text-xs py-1.5 hover:bg-slate-50 px-2 rounded-lg transition-colors">
+                              <input
+                                type="radio"
+                                name="post-status-filter"
+                                checked={tempPostStatusFilter === s}
+                                onChange={() => setTempPostStatusFilter(s)}
+                                className="w-3.5 h-3.5 text-theme-purple border-slate-300 focus:ring-theme-purple"
+                              />
+                              <span>{STATUS_LABELS[s]}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex gap-2 border-t border-slate-100 pt-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPostStatusFilter(null);
+                              setTempPostStatusFilter(null);
+                              setActivePopover(null);
+                            }}
+                            className="flex-1 py-1 border border-slate-250 rounded-lg text-[10px] font-bold text-slate-500 hover:bg-slate-50 transition-colors"
+                          >
+                            Clear
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPostStatusFilter(tempPostStatusFilter);
+                              setActivePopover(null);
+                            }}
+                            className="flex-1 py-1 bg-theme-purple text-white rounded-lg text-[10px] font-bold hover:bg-purple-600 transition-colors"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-600">Updated</th>
                   <th className="px-6 py-3 text-right font-semibold text-slate-600">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {posts.map((post) => (
-                  <tr key={post._id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 font-medium text-slate-800 max-w-xs">
-                      <div className="flex items-center gap-2">
-                        <Link to={`/posts/${post._id}`} className="hover:text-theme-purple transition-colors line-clamp-1">
-                          {post.title}
-                        </Link>
-                        {post.isBreaking && (
-                          <span className="text-[10px] font-black tracking-wider text-red-600 bg-red-100 px-1.5 py-0.5 rounded-sm whitespace-nowrap">
-                            🔴 BREAKING
-                          </span>
-                        )}
-                        {post.priority && post.priority !== 'normal' && (
-                          <span className={`text-[10px] font-bold tracking-wider px-1.5 py-0.5 rounded-sm whitespace-nowrap ${post.priority === 'urgent' ? 'bg-red-500 text-white' : 'bg-yellow-400 text-yellow-900'}`}>
-                            {post.priority.toUpperCase()}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-slate-600">
-                      <div className="flex items-center gap-2">
-                        <span>{post.author?.name}</span>
-                        {post.coAuthors?.length > 0 && (
-                          <span 
-                            className="text-[10px] font-bold text-theme-purple bg-theme-purple/10 px-1.5 py-0.5 rounded-full" 
-                            title={post.coAuthors.map(c => c.name).join(', ')}
-                          >
-                            +{post.coAuthors.length}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-slate-500">{post.category?.name || '—'}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${STATUS_COLORS[post.status]}`}>
-                        {STATUS_LABELS[post.status]}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-slate-500">
-                      {new Date(post.updatedAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-2">
-                        <Link
-                          to={`/posts/${post._id}`}
-                          className="px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200
-                            rounded-lg hover:border-theme-purple hover:text-theme-purple transition-colors"
-                        >
-                          Edit
-                        </Link>
-                        {canApprove && post.status === 'pending_approval' && (
-                          <>
-                            <button
-                              onClick={() => {
-                                setApproveModal({ 
-                                  open: true, postId: post._id, 
-                                  isBreaking: post.isBreaking || false, 
-                                  priority: post.priority || 'normal',
-                                  breakingExpiresAt: post.breakingExpiresAt ? new Date(post.breakingExpiresAt).toISOString().slice(0, 10) : '',
-                                  breakingExpiresTime: post.breakingExpiresAt ? new Date(post.breakingExpiresAt).toISOString().slice(11, 16) : '00:00',
-                                });
-                              }}
-                              disabled={actionLoading === post._id + '_approve'}
-                              className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-500 rounded-lg
-                                hover:bg-emerald-600 transition-colors disabled:opacity-60"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => setRejectModal({ open: true, postId: post._id })}
-                              className="px-3 py-1.5 text-xs font-bold text-white bg-red-500 rounded-lg
-                                hover:bg-red-600 transition-colors"
-                            >
-                              Reject
-                            </button>
-                          </>
-                        )}
-                        {post.deletedAt ? (
-                          isAdmin && (
-                            <button
-                              onClick={() => handleRestore(post._id)}
-                              disabled={actionLoading === post._id + '_restore'}
-                              className="px-3 py-1.5 text-xs font-bold text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-60"
-                            >
-                              Restore
-                            </button>
-                          )
-                        ) : (
-                          <button
-                            onClick={() => handleDelete(post._id)}
-                            disabled={actionLoading === post._id + '_delete'}
-                            className="px-3 py-1.5 text-xs font-bold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-60"
-                          >
-                            Delete
-                          </button>
-                        )}
-                      </div>
+                {filteredPosts.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-slate-400">
+                      <p className="text-2xl mb-1">🔍</p>
+                      <p className="font-semibold text-sm">No posts match the active filters.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCategoryFilter(null);
+                          setPostStatusFilter(null);
+                        }}
+                        className="mt-2 text-xs font-bold text-theme-purple hover:underline"
+                      >
+                        Clear All Filters
+                      </button>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredPosts.map((post) => (
+                    <tr key={post._id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4 font-medium text-slate-800 max-w-xs">
+                        <div className="flex items-center gap-2">
+                          <Link to={`/posts/${post._id}`} className="hover:text-theme-purple transition-colors line-clamp-1">
+                            {post.title}
+                          </Link>
+                          {post.isBreaking && (
+                            <span className="text-[10px] font-black tracking-wider text-red-600 bg-red-100 px-1.5 py-0.5 rounded-sm whitespace-nowrap">
+                              🔴 BREAKING
+                            </span>
+                          )}
+                          {post.priority && post.priority !== 'normal' && (
+                            <span className={`text-[10px] font-bold tracking-wider px-1.5 py-0.5 rounded-sm whitespace-nowrap ${post.priority === 'urgent' ? 'bg-red-500 text-white' : 'bg-yellow-400 text-yellow-900'}`}>
+                              {post.priority.toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-600">
+                        <div className="flex items-center gap-2">
+                          <span>{post.author?.name}</span>
+                          {post.coAuthors?.length > 0 && (
+                            <span 
+                              className="text-[10px] font-bold text-theme-purple bg-theme-purple/10 px-1.5 py-0.5 rounded-full" 
+                              title={post.coAuthors.map(c => c.name).join(', ')}
+                            >
+                              +{post.coAuthors.length}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-500">{post.category?.name || '—'}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${STATUS_COLORS[post.status]}`}>
+                          {STATUS_LABELS[post.status]}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-500">
+                        {new Date(post.updatedAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-2">
+                          <Link
+                            to={`/posts/${post._id}`}
+                            className="px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200
+                              rounded-lg hover:border-theme-purple hover:text-theme-purple transition-colors"
+                          >
+                            Edit
+                          </Link>
+                          {canApprove && post.status === 'pending_approval' && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setApproveModal({ 
+                                    open: true, postId: post._id, 
+                                    isBreaking: post.isBreaking || false, 
+                                    priority: post.priority || 'normal',
+                                    breakingExpiresAt: post.breakingExpiresAt ? new Date(post.breakingExpiresAt).toISOString().slice(0, 10) : '',
+                                    breakingExpiresTime: post.breakingExpiresAt ? new Date(post.breakingExpiresAt).toISOString().slice(11, 16) : '00:00',
+                                  });
+                                }}
+                                disabled={actionLoading === post._id + '_approve'}
+                                className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-500 rounded-lg
+                                  hover:bg-emerald-600 transition-colors disabled:opacity-60"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => setRejectModal({ open: true, postId: post._id })}
+                                className="px-3 py-1.5 text-xs font-bold text-white bg-red-500 rounded-lg
+                                  hover:bg-red-600 transition-colors"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
+                          {post.deletedAt ? (
+                            isAdmin && (
+                              <button
+                                onClick={() => handleRestore(post._id)}
+                                disabled={actionLoading === post._id + '_restore'}
+                                className="px-3 py-1.5 text-xs font-bold text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-60"
+                              >
+                                Restore
+                              </button>
+                            )
+                          ) : (
+                            <button
+                              onClick={() => handleDelete(post._id)}
+                              disabled={actionLoading === post._id + '_delete'}
+                              className="px-3 py-1.5 text-xs font-bold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-60"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

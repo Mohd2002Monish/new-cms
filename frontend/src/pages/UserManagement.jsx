@@ -53,6 +53,19 @@ export default function UserManagement() {
   const [formSaving, setFormSaving] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
 
+  // Filter states
+  const [roleFilter, setRoleFilter] = useState(null);
+  const [statusFilter, setStatusFilter] = useState(null);
+  const [activePopover, setActivePopover] = useState(null); // 'role' | 'status' | null
+  const [tempRoleFilter, setTempRoleFilter] = useState(null);
+  const [tempStatusFilter, setTempStatusFilter] = useState(null);
+
+  const filteredUsers = users.filter((u) => {
+    if (roleFilter && u.role !== roleFilter) return false;
+    if (statusFilter && u.status !== statusFilter) return false;
+    return true;
+  });
+
   const fetchUsers = async () => {
     setLoading(true);
     setError(null);
@@ -306,111 +319,249 @@ export default function UserManagement() {
             <p className="font-medium">No users found.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" style={{ minHeight: activePopover ? '300px' : 'auto' }}>
+            {activePopover && (
+              <div className="fixed inset-0 z-30" onClick={() => setActivePopover(null)} />
+            )}
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
                   <th className="px-6 py-3 text-left font-semibold text-slate-600">Name</th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-600">Email</th>
-                  <th className="px-6 py-3 text-left font-semibold text-slate-600">Role</th>
+                  <th className="px-6 py-3 text-left font-semibold text-slate-600 relative">
+                    <div className="flex items-center gap-1.5 cursor-pointer select-none group" onClick={() => {
+                      setActivePopover(activePopover === 'role' ? null : 'role');
+                      setTempRoleFilter(roleFilter);
+                    }}>
+                      <span>Role</span>
+                      <span className={`p-0.5 rounded hover:bg-slate-200 transition-colors ${roleFilter ? 'text-theme-purple bg-purple-50' : 'text-slate-400'}`}>
+                        <svg className="w-3.5 h-3.5" fill={roleFilter ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                      </span>
+                      {roleFilter && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-theme-purple" title="Filter applied" />
+                      )}
+                    </div>
+
+                    {activePopover === 'role' && (
+                      <div className="absolute left-6 top-full mt-1 w-52 bg-white border border-slate-150 rounded-2xl shadow-xl p-4 z-40 text-slate-700 font-normal">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Filter by Role</div>
+                        <div className="space-y-1 mb-4">
+                          {['admin', 'manager', 'editor'].map((r) => (
+                            <label key={r} className="flex items-center gap-2 cursor-pointer text-xs py-1.5 hover:bg-slate-50 px-2 rounded-lg transition-colors">
+                              <input
+                                type="radio"
+                                name="role-filter"
+                                checked={tempRoleFilter === r}
+                                onChange={() => setTempRoleFilter(r)}
+                                className="w-3.5 h-3.5 text-theme-purple border-slate-300 focus:ring-theme-purple"
+                              />
+                              <span className="capitalize">{r}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex gap-2 border-t border-slate-100 pt-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRoleFilter(null);
+                              setTempRoleFilter(null);
+                              setActivePopover(null);
+                            }}
+                            className="flex-1 py-1 border border-slate-250 rounded-lg text-[10px] font-bold text-slate-500 hover:bg-slate-50 transition-colors"
+                          >
+                            Clear
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRoleFilter(tempRoleFilter);
+                              setActivePopover(null);
+                            }}
+                            className="flex-1 py-1 bg-theme-purple text-white rounded-lg text-[10px] font-bold hover:bg-purple-600 transition-colors"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-600">Manager</th>
-                  <th className="px-6 py-3 text-left font-semibold text-slate-600">Status</th>
+                  <th className="px-6 py-3 text-left font-semibold text-slate-600 relative">
+                    <div className="flex items-center gap-1.5 cursor-pointer select-none group" onClick={() => {
+                      setActivePopover(activePopover === 'status' ? null : 'status');
+                      setTempStatusFilter(statusFilter);
+                    }}>
+                      <span>Status</span>
+                      <span className={`p-0.5 rounded hover:bg-slate-200 transition-colors ${statusFilter ? 'text-theme-purple bg-purple-50' : 'text-slate-400'}`}>
+                        <svg className="w-3.5 h-3.5" fill={statusFilter ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                      </span>
+                      {statusFilter && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-theme-purple" title="Filter applied" />
+                      )}
+                    </div>
+
+                    {activePopover === 'status' && (
+                      <div className="absolute left-6 top-full mt-1 w-52 bg-white border border-slate-150 rounded-2xl shadow-xl p-4 z-40 text-slate-700 font-normal">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Filter by Status</div>
+                        <div className="space-y-1 mb-4">
+                          {['active', 'inactive'].map((s) => (
+                            <label key={s} className="flex items-center gap-2 cursor-pointer text-xs py-1.5 hover:bg-slate-50 px-2 rounded-lg transition-colors">
+                              <input
+                                type="radio"
+                                name="status-filter"
+                                checked={tempStatusFilter === s}
+                                onChange={() => setTempStatusFilter(s)}
+                                className="w-3.5 h-3.5 text-theme-purple border-slate-300 focus:ring-theme-purple"
+                              />
+                              <span className="capitalize">{s}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex gap-2 border-t border-slate-100 pt-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStatusFilter(null);
+                              setTempStatusFilter(null);
+                              setActivePopover(null);
+                            }}
+                            className="flex-1 py-1 border border-slate-250 rounded-lg text-[10px] font-bold text-slate-500 hover:bg-slate-50 transition-colors"
+                          >
+                            Clear
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStatusFilter(tempStatusFilter);
+                              setActivePopover(null);
+                            }}
+                            className="flex-1 py-1 bg-theme-purple text-white rounded-lg text-[10px] font-bold hover:bg-purple-600 transition-colors"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-600">Joined</th>
                   <th className="px-6 py-3 text-right font-semibold text-slate-600">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {users.map((u) => (
-                  <tr key={u._id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 font-semibold text-slate-800 flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-theme-lavender flex items-center justify-center
-                        text-slate-700 font-bold text-xs flex-shrink-0">
-                        {u.name?.[0]?.toUpperCase()}
-                      </div>
-                      <div>
-                        <p>{u.name}</p>
-                        {u._id === currentUser?.id && (
-                          <span className="text-[10px] text-theme-purple font-bold">You</span>
-                        )}
-                      </div>
+                {filteredUsers.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-slate-400">
+                      <p className="text-2xl mb-1">🔍</p>
+                      <p className="font-semibold text-sm">No users match the active filters.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRoleFilter(null);
+                          setStatusFilter(null);
+                        }}
+                        className="mt-2 text-xs font-bold text-theme-purple hover:underline"
+                      >
+                        Clear All Filters
+                      </button>
                     </td>
-                    <td className="px-6 py-4 text-slate-600">{u.email}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${ROLE_COLORS[u.role]}`}>
-                        {u.role}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-slate-500 text-xs">
-                      {u.assignedManager?.name || '—'}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold
-                        ${u.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
-                        {u.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-slate-500 text-xs">
-                      {new Date(u.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-2">
-                        {/* Cannot perform actions on yourself or other admins if you are an admin */}
-                        {u._id !== currentUser?.id && !(isAdmin && u.role === 'admin') && (
-                          u.deletedAt ? (
-                            isAdmin && (
-                              <button
-                                onClick={() => handleRestore(u._id)}
-                                disabled={actionLoading === u._id + '_restore'}
-                                className="px-3 py-1.5 text-xs font-bold text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-60"
-                              >
-                                Restore
-                              </button>
-                            )
-                          ) : (
-                            <>
-                              {isAdmin && (
-                                <Link
-                                  to={`/users/${u._id}/permissions`}
+                  </tr>
+                ) : (
+                  filteredUsers.map((u) => (
+                    <tr key={u._id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4 font-semibold text-slate-800 flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-theme-lavender flex items-center justify-center
+                          text-slate-700 font-bold text-xs flex-shrink-0">
+                          {u.name?.[0]?.toUpperCase()}
+                        </div>
+                        <div>
+                          <p>{u.name}</p>
+                          {u._id === currentUser?.id && (
+                            <span className="text-[10px] text-theme-purple font-bold">You</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-600">{u.email}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${ROLE_COLORS[u.role]}`}>
+                          {u.role}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-500 text-xs">
+                        {u.assignedManager?.name || '—'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold
+                          ${u.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                          {u.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-500 text-xs">
+                        {new Date(u.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-2">
+                          {/* Cannot perform actions on yourself or other admins if you are an admin */}
+                          {u._id !== currentUser?.id && !(isAdmin && u.role === 'admin') && (
+                            u.deletedAt ? (
+                              isAdmin && (
+                                <button
+                                  onClick={() => handleRestore(u._id)}
+                                  disabled={actionLoading === u._id + '_restore'}
+                                  className="px-3 py-1.5 text-xs font-bold text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-60"
+                                >
+                                  Restore
+                                </button>
+                              )
+                            ) : (
+                              <>
+                                {isAdmin && (
+                                  <Link
+                                    to={`/users/${u._id}/permissions`}
+                                    className="px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200
+                                      rounded-lg hover:border-theme-purple hover:text-theme-purple transition-colors"
+                                  >
+                                    Permissions
+                                  </Link>
+                                )}
+                                <button
+                                  onClick={() => handleEditClick(u)}
                                   className="px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200
                                     rounded-lg hover:border-theme-purple hover:text-theme-purple transition-colors"
                                 >
-                                  Permissions
-                                </Link>
-                              )}
-                              <button
-                                onClick={() => handleEditClick(u)}
-                                className="px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200
-                                  rounded-lg hover:border-theme-purple hover:text-theme-purple transition-colors"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => handleToggleStatus(u._id, u.status)}
-                                disabled={actionLoading === u._id + '_status'}
-                                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors disabled:opacity-60
-                                  ${u.status === 'active'
-                                    ? 'text-slate-600 border border-slate-200 hover:bg-slate-50'
-                                    : 'text-emerald-600 border border-emerald-200 hover:bg-emerald-50'
-                                  }`}
-                              >
-                                {actionLoading === u._id + '_status' ? '…' : u.status === 'active' ? 'Deactivate' : 'Activate'}
-                              </button>
-                              {isAdmin && (
-                                <button
-                                  onClick={() => handleDelete(u._id)}
-                                  disabled={actionLoading === u._id + '_delete'}
-                                  className="px-3 py-1.5 text-xs font-bold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-60"
-                                >
-                                  Delete
+                                  Edit
                                 </button>
-                              )}
-                            </>
-                          )
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                                <button
+                                  onClick={() => handleToggleStatus(u._id, u.status)}
+                                  disabled={actionLoading === u._id + '_status'}
+                                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors disabled:opacity-60
+                                    ${u.status === 'active'
+                                      ? 'text-slate-600 border border-slate-200 hover:bg-slate-50'
+                                      : 'text-emerald-600 border border-emerald-200 hover:bg-emerald-50'
+                                    }`}
+                                >
+                                  {actionLoading === u._id + '_status' ? '…' : u.status === 'active' ? 'Deactivate' : 'Activate'}
+                                </button>
+                                {isAdmin && (
+                                  <button
+                                    onClick={() => handleDelete(u._id)}
+                                    disabled={actionLoading === u._id + '_delete'}
+                                    className="px-3 py-1.5 text-xs font-bold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-60"
+                                  >
+                                    Delete
+                                  </button>
+                                )}
+                              </>
+                            )
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
