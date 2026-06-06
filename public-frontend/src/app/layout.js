@@ -37,6 +37,7 @@ export const metadata = {
 
 import ThemeProvider from '@/components/ThemeProvider';
 import ClientLayout from '@/components/ClientLayout';
+import { AuthProvider } from '@/context/AuthContext';
 
 export default function RootLayout({ children }) {
   return (
@@ -44,9 +45,11 @@ export default function RootLayout({ children }) {
       <body className="antialiased">
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:p-4 focus:bg-white focus:text-black">Skip to main content</a>
         <ThemeProvider>
-          <ClientLayout>
-            {children}
-          </ClientLayout>
+          <AuthProvider>
+            <ClientLayout>
+              {children}
+            </ClientLayout>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { publicApi } from '@/lib/api';
 import { ThumbsUp, Heart, Zap, Angry, Frown } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 const EMOJIS = {
   like: <ThumbsUp size={16} />,
@@ -16,6 +17,7 @@ export default function ReactionsBar({ articleSlug }) {
   const [counts, setCounts] = useState({ like: 0, love: 0, wow: 0, angry: 0, sad: 0 });
   const [userReaction, setUserReaction] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { user, openAuthModal } = useAuth();
 
   useEffect(() => {
     const fetchReactions = async () => {
@@ -36,6 +38,10 @@ export default function ReactionsBar({ articleSlug }) {
   }, [articleSlug]);
 
   const handleReact = async (reactionType) => {
+    if (!user) {
+      openAuthModal();
+      return;
+    }
     // Optimistic UI update
     const previousReaction = userReaction;
     setUserReaction(reactionType);

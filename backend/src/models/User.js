@@ -23,7 +23,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['admin', 'manager', 'editor'],
+    enum: ['admin', 'manager', 'editor', 'reader'],
     default: 'editor',
   },
   status: {
@@ -44,6 +44,39 @@ const userSchema = new mongoose.Schema({
   lastLogin: {
     type: Date,
     default: null,
+  },
+  interests: {
+    type: Map,
+    of: Number,
+    default: {},
+  },
+  readArticles: {
+    type: [String],
+    default: [],
+  },
+  bookmarks: {
+    type: [String],
+    default: [],
+  },
+  readingStreak: {
+    type: Number,
+    default: 0,
+  },
+  lastReadDate: {
+    type: Date,
+    default: null,
+  },
+  trackingEnabled: {
+    type: Boolean,
+    default: true,
+  },
+  monthlyViewsCount: {
+    type: Number,
+    default: 0,
+  },
+  isPremiumUser: {
+    type: Boolean,
+    default: false,
   },
   deletedAt: {
     type: Date,

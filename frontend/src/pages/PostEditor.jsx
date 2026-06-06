@@ -11,6 +11,7 @@ import api from '../services/api.js';
 import Select from 'react-select';
 import Datepicker from 'react-tailwindcss-datepicker';
 import { CommentMark } from '../extensions/CommentMark.js';
+import { PollExtension } from '../extensions/PollExtension.jsx';
 import MediaLibrary from '../components/MediaLibrary.jsx';
 
 // ─── Toolbar Button ───────────────────────────────────────────────────────────
@@ -88,6 +89,22 @@ function EditorToolbar({ editor, onImageUpload }) {
       {/* Undo / Redo */}
       <ToolbarBtn active={false} onClick={() => editor.chain().focus().undo().run()} title="Undo" disabled={!editor.can().undo()}>↩</ToolbarBtn>
       <ToolbarBtn active={false} onClick={() => editor.chain().focus().redo().run()} title="Redo" disabled={!editor.can().redo()}>↪</ToolbarBtn>
+
+      <div className="w-px h-5 bg-slate-200 mx-1" />
+
+      <button
+        type="button"
+        title="Insert poll"
+        onClick={() => {
+          window.dispatchEvent(new CustomEvent('open-poll-modal'));
+        }}
+        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-sm font-medium text-rose-600 hover:bg-rose-50 transition-colors"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+        Poll
+      </button>
 
       <div className="w-px h-5 bg-slate-200 mx-1" />
       
@@ -331,6 +348,236 @@ function CommentThreadPanel({ comments, setComments, postId, user, activeComment
   );
 }
 
+function AIAssistantPanel({ editor, meta, setMeta }) {
+  const [suggestions, setSuggestions] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [loadingStep, setLoadingStep] = useState(0);
+
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      interval = setInterval(() => {
+        setLoadingStep((prev) => (prev + 1) % 4);
+      }, 1500);
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  const loadingMessages = [
+    'Reading article draft...',
+    'Analyzing key categories and concepts...',
+    'Synthesizing SEO title & description...',
+    'Brainstorming catchy headline hooks...'
+  ];
+
+  const handleGenerate = async () => {
+    if (!meta.title.trim()) {
+      setError('Please provide a draft title first.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      const htmlContent = editor?.getHTML() || '';
+      const { data } = await api.post('/admin/ai/suggest', {
+        title: meta.title,
+        content: htmlContent
+      });
+
+      if (data.success) {
+        setSuggestions(data.data);
+      } else {
+        setError('Failed to generate suggestions');
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || 'Error communicating with AI assistant');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const applyHeadline = (headline) => {
+    setMeta(prev => ({ ...prev, title: headline }));
+  };
+
+  const applyExcerpt = (excerpt) => {
+    setMeta(prev => ({ ...prev, excerpt: excerpt }));
+  };
+
+  const applySEO = (seoTitle, seoDesc) => {
+    setMeta(prev => ({
+      ...prev,
+      seo: {
+        ...prev.seo,
+        metaTitle: seoTitle,
+        metaDescription: seoDesc,
+        ogTitle: seoTitle,
+        ogDescription: seoDesc
+      }
+    }));
+  };
+
+  const applyTags = (tagsList) => {
+    setMeta(prev => ({ ...prev, tags: tagsList.join(', ') }));
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-100 p-6 flex flex-col items-center justify-center h-[500px] text-center select-none">
+        <div className="relative mb-6">
+          <div className="w-16 h-16 rounded-full bg-purple-50 flex items-center justify-center animate-pulse border border-purple-100">
+            <span className="text-2xl">🪄</span>
+          </div>
+          <div className="absolute inset-0 rounded-full border-2 border-purple-400/30 animate-ping" />
+        </div>
+        <h4 className="font-bold text-slate-800 text-sm mb-1">AI Assistant at work</h4>
+        <p className="text-xs text-purple-600 font-semibold animate-fade-in transition-all">
+          {loadingMessages[loadingStep]}
+        </p>
+        <div className="w-40 bg-slate-100 h-1.5 rounded-full overflow-hidden mt-4">
+          <div className="bg-theme-purple h-full rounded-full animate-[loading-bar_1.5s_infinite_linear]" style={{ width: '40%' }} />
+        </div>
+        <style>{`
+          @keyframes loading-bar {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(250%); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm text-center">
+        <div className="text-red-500 text-2xl mb-2">⚠️</div>
+        <h4 className="font-bold text-slate-800 text-sm mb-1.5">Assistant Encountered an Issue</h4>
+        <p className="text-xs text-slate-500 mb-4">{error}</p>
+        <button
+          onClick={handleGenerate}
+          className="w-full py-2 bg-theme-purple text-white text-xs font-bold rounded-lg hover:bg-purple-600 transition-colors"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  if (!suggestions) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm flex flex-col items-center justify-center text-center h-[400px]">
+        <div className="text-3xl mb-3">🪄</div>
+        <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wider mb-2">AI Editorial Assistant</h3>
+        <p className="text-xs text-slate-500 max-w-xs leading-relaxed mb-5">
+          Let AI analyze your title and draft body to suggest optimal headlines, summaries, tags, and SEO metadata hooks.
+        </p>
+        <button
+          onClick={handleGenerate}
+          className="px-5 py-2.5 bg-theme-purple hover:bg-purple-600 text-white font-bold text-xs rounded-xl shadow-md shadow-theme-purple/10 hover:shadow-lg transition-all flex items-center gap-1.5"
+        >
+          <span>🪄</span> Generate AI Suggestions
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex flex-col gap-5 h-[700px] overflow-y-auto">
+      <div className="flex justify-between items-center border-b border-slate-50 pb-2">
+        <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5">
+          <span>🪄</span> AI Suggestions
+        </h3>
+        <button
+          onClick={handleGenerate}
+          className="text-[10px] font-bold text-theme-purple hover:underline"
+        >
+          Refresh AI
+        </button>
+      </div>
+
+      {/* Excerpt Suggestions */}
+      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+        <div className="flex justify-between items-center mb-1.5">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Suggested Excerpt</span>
+          <button
+            onClick={() => applyExcerpt(suggestions.excerpt)}
+            className="text-[10px] font-bold text-white bg-slate-800 px-2 py-0.5 rounded hover:bg-slate-700 transition-colors"
+          >
+            Apply
+          </button>
+        </div>
+        <p className="text-xs text-slate-600 leading-relaxed italic">
+          "{suggestions.excerpt}"
+        </p>
+      </div>
+
+      {/* Headline Hooks */}
+      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Headline Hook Alternatives</span>
+        <div className="space-y-1.5">
+          {suggestions.headlineVariations?.map((headline, idx) => (
+            <div key={idx} className="flex justify-between items-center gap-2 p-2 bg-white rounded-lg border border-slate-200/50 text-xs text-slate-700">
+              <span className="font-medium flex-1">{headline}</span>
+              <button
+                onClick={() => applyHeadline(headline)}
+                className="text-[10px] font-bold text-theme-purple hover:underline flex-shrink-0"
+              >
+                Apply
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* SEO Title / Description */}
+      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">SEO Google Metadata</span>
+          <button
+            onClick={() => applySEO(suggestions.seoTitle, suggestions.seoDescription)}
+            className="text-[10px] font-bold text-white bg-slate-800 px-2 py-0.5 rounded hover:bg-slate-700 transition-colors"
+          >
+            Apply Both
+          </button>
+        </div>
+        <div className="space-y-1.5">
+          <div className="bg-white p-2.5 rounded-lg border border-slate-200/50 text-xs">
+            <span className="text-[9px] font-bold text-slate-400 block mb-0.5">Title</span>
+            <span className="text-slate-800 font-semibold">{suggestions.seoTitle}</span>
+          </div>
+          <div className="bg-white p-2.5 rounded-lg border border-slate-200/50 text-xs">
+            <span className="text-[9px] font-bold text-slate-400 block mb-0.5">Meta Description</span>
+            <span className="text-slate-600 leading-normal">{suggestions.seoDescription}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Suggested Tags */}
+      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Suggested Tags</span>
+          <button
+            onClick={() => applyTags(suggestions.tags)}
+            className="text-[10px] font-bold text-theme-purple hover:underline"
+          >
+            Apply Tags
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {suggestions.tags?.map((tag) => (
+            <span key={tag} className="bg-purple-50 text-purple-700 border border-purple-100 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+              #{tag}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Editor Page ─────────────────────────────────────────────────────────
 
 export default function PostEditor() {
@@ -345,6 +592,7 @@ export default function PostEditor() {
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [error, setError] = useState(null);
 
@@ -365,6 +613,25 @@ export default function PostEditor() {
   // Media Modal
   const [showMediaModal, setShowMediaModal] = useState(false);
   const [mediaTarget, setMediaTarget] = useState(null);
+
+  // Poll Modal
+  const [showPollModal, setShowPollModal] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState('');
+  const [pollOptions, setPollOptions] = useState(['', '']);
+  const [insertingPoll, setInsertingPoll] = useState(false);
+  const [pollError, setPollError] = useState('');
+
+  // AI Magic Writer Modal
+  const [showWriterModal, setShowWriterModal] = useState(false);
+  const [writerPrompt, setWriterPrompt] = useState('');
+  const [writingArticle, setWritingArticle] = useState(false);
+  const [writerError, setWriterError] = useState('');
+
+  // AI Magic Edit Modal
+  const [showAiEditModal, setShowAiEditModal] = useState(false);
+  const [aiInstruction, setAiInstruction] = useState('');
+  const [editingArticleBody, setEditingArticleBody] = useState(false);
+  const [aiEditError, setAiEditError] = useState('');
 
   // Drag-over state for the editor drop zone
   const [isDragOver, setIsDragOver] = useState(false);
@@ -391,6 +658,7 @@ export default function PostEditor() {
     },
     isBreaking: false,
     isSlider: false,
+    isLiveBlog: false,
     priority: 'normal',
     breakingExpiresAt: '',
     breakingExpiresTime: '00:00',
@@ -404,6 +672,7 @@ export default function PostEditor() {
       Image.configure({ inline: false, allowBase64: true }),
       Link.configure({ openOnClick: false }),
       CommentMark,
+      PollExtension,
     ],
     content: '',
     onUpdate: ({ editor }) => {
@@ -452,6 +721,7 @@ export default function PostEditor() {
             },
             isBreaking: p.isBreaking || false,
             isSlider: p.isSlider || false,
+            isLiveBlog: p.isLiveBlog || false,
             priority: p.priority || 'normal',
             breakingExpiresAt: p.breakingExpiresAt ? new Date(p.breakingExpiresAt).toISOString().slice(0, 10) : '',
             breakingExpiresTime: p.breakingExpiresAt ? new Date(p.breakingExpiresAt).toISOString().slice(11, 16) : '00:00',
@@ -503,6 +773,7 @@ export default function PostEditor() {
       },
       isBreaking: rev.isBreaking || false,
       isSlider: rev.isSlider || false,
+      isLiveBlog: rev.isLiveBlog || false,
       priority: rev.priority || 'normal',
       breakingExpiresAt: rev.breakingExpiresAt ? new Date(rev.breakingExpiresAt).toISOString().slice(0, 10) : '',
       breakingExpiresTime: rev.breakingExpiresAt ? new Date(rev.breakingExpiresAt).toISOString().slice(11, 16) : '00:00',
@@ -535,6 +806,7 @@ export default function PostEditor() {
       },
       isBreaking: post.isBreaking || false,
       isSlider: post.isSlider || false,
+      isLiveBlog: post.isLiveBlog || false,
       priority: post.priority || 'normal',
       breakingExpiresAt: post.breakingExpiresAt ? new Date(post.breakingExpiresAt).toISOString().slice(0, 10) : '',
       breakingExpiresTime: post.breakingExpiresAt ? new Date(post.breakingExpiresAt).toISOString().slice(11, 16) : '00:00',
@@ -601,6 +873,15 @@ export default function PostEditor() {
     return () => window.removeEventListener('open-media-library', handleOpenMedia);
   }, []);
 
+  // Listen for 'open-poll-modal'
+  useEffect(() => {
+    const handleOpenPoll = () => {
+      setShowPollModal(true);
+    };
+    window.addEventListener('open-poll-modal', handleOpenPoll);
+    return () => window.removeEventListener('open-poll-modal', handleOpenPoll);
+  }, []);
+
   const handleMediaSelect = (asset) => {
     if (mediaTarget === 'editor' && editor) {
       editor.chain().focus().setImage({ src: asset.url, alt: asset.altText || asset.fileName }).run();
@@ -648,6 +929,7 @@ export default function PostEditor() {
       featuredImage: meta.featuredImageUrl
         ? { url: meta.featuredImageUrl, alt: meta.title }
         : undefined,
+      isLiveBlog: meta.isLiveBlog,
     };
 
     if (user?.role !== 'editor') {
@@ -664,7 +946,10 @@ export default function PostEditor() {
     if (!meta.title.trim()) { setError('Title is required'); return; }
     setSaving(true); setError(null);
     try {
-      const payload = buildPayload();
+      const payload = {
+        ...buildPayload(),
+        status: post?.status === 'live' ? 'live' : 'draft'
+      };
       if (isNew) {
         const { data } = await api.post('/posts', payload);
         navigate(`/posts/${data.data._id}`, { replace: true });
@@ -692,6 +977,31 @@ export default function PostEditor() {
       setError(err.response?.data?.message || 'Submit failed');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!meta.title.trim()) { setError('Title is required'); return; }
+    setPublishing(true); setError(null);
+    try {
+      const payload = {
+        ...buildPayload(),
+        status: 'live'
+      };
+      if (isNew) {
+        const { data } = await api.post('/posts', payload);
+        navigate(`/posts/${data.data._id}`, { replace: true });
+      } else {
+        const { data } = await api.patch(`/posts/${id}`, payload);
+        setPost(data.data);
+        fetchRevisions();
+      }
+      setSaveMsg(post?.status === 'live' ? 'Updated live article!' : 'Published successfully!');
+      setTimeout(() => setSaveMsg(''), 2500);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Publish failed');
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -737,28 +1047,44 @@ export default function PostEditor() {
             </button>
           )}
 
+
+
           {canEdit && !viewingRevision && (
             <button
               onClick={handleSave}
               disabled={saving}
               id="save-post-btn"
               className="px-5 py-2.5 border-2 border-theme-purple text-theme-purple font-bold rounded-xl
-                hover:bg-theme-purple hover:text-white transition-all disabled:opacity-60"
+                hover:bg-theme-purple hover:text-white transition-all disabled:opacity-60 cursor-pointer"
             >
               {saving ? 'Saving…' : 'Save Draft'}
             </button>
           )}
 
-          {canEdit && !isNew && !viewingRevision && (
-            <button
-              onClick={handleSubmit}
-              disabled={submitting}
-              id="submit-post-btn"
-              className="px-5 py-2.5 bg-theme-purple text-white font-bold rounded-xl
-                hover:bg-purple-600 transition-all hover:shadow-lg hover:shadow-theme-purple/30 disabled:opacity-60"
-            >
-              {submitting ? 'Submitting…' : 'Submit for Review'}
-            </button>
+          {canEdit && !viewingRevision && (
+            isAdmin ? (
+              <button
+                onClick={handlePublish}
+                disabled={publishing}
+                id="publish-post-btn"
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl
+                  transition-all hover:shadow-lg hover:shadow-emerald-600/30 disabled:opacity-60 cursor-pointer"
+              >
+                {publishing ? 'Publishing…' : (post?.status === 'live' ? 'Update Live' : 'Publish Directly')}
+              </button>
+            ) : (
+              !isNew && (
+                <button
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  id="submit-post-btn"
+                  className="px-5 py-2.5 bg-theme-purple text-white font-bold rounded-xl
+                    hover:bg-purple-600 transition-all hover:shadow-lg hover:shadow-theme-purple/30 disabled:opacity-60 cursor-pointer"
+                >
+                  {submitting ? 'Submitting…' : 'Submit for Review'}
+                </button>
+              )
+            )
           )}
         </div>
       </div>
@@ -851,6 +1177,19 @@ export default function PostEditor() {
                 editor={editor}
                 className="prose prose-slate max-w-none px-6 py-5 min-h-[420px] focus:outline-none"
               />
+
+              {/* AI Magic Edit Button */}
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setShowAiEditModal(true)}
+                  className="absolute bottom-14 right-6 z-10 px-5 py-3 text-white font-bold rounded-full shadow-xl transition-all transform hover:scale-105 active:scale-95 flex items-center gap-2 cursor-pointer text-sm group"
+                  style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #db2777 100%)', border: 'none', color: '#ffffff' }}
+                  title="AI Article Editor"
+                >
+                  <span className="group-hover:animate-spin">🪄</span> AI Magic Edit
+                </button>
+              )}
 
               {/* Drop hint footer */}
               {canEdit && (
@@ -990,13 +1329,22 @@ export default function PostEditor() {
             {/* Panel Toggle */}
             <div className="flex gap-2 bg-slate-100 p-1 rounded-xl w-fit">
               <button 
+                type="button"
                 onClick={() => setRightPanel('meta')} 
                 className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${rightPanel === 'meta' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
               >
                 Settings
               </button>
+              <button 
+                type="button"
+                onClick={() => setRightPanel('ai')} 
+                className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${rightPanel === 'ai' ? 'bg-white shadow text-purple-700' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                🪄 AI Assistant
+              </button>
               {!isNew && (
                 <button 
+                  type="button"
                   onClick={() => setRightPanel('comments')} 
                   className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${rightPanel === 'comments' ? 'bg-white shadow text-amber-600' : 'text-slate-500 hover:text-slate-700'}`}
                 >
@@ -1006,7 +1354,7 @@ export default function PostEditor() {
               )}
             </div>
 
-            {rightPanel === 'meta' ? (
+            {rightPanel === 'meta' && (
               <>
                 {/* Excerpt */}
                 <div className="bg-white rounded-2xl border border-slate-100 p-4">
@@ -1227,17 +1575,100 @@ export default function PostEditor() {
                 </div>
               </div>
             )}
+            
+            {/* Live Blog Card */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm mb-6">
+              <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <span className="text-rose-600">🔴</span> Live Blog Updates
+              </h3>
+              
+              <div className="space-y-4">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-sm font-bold text-slate-700">Enable Live Blog Mode</span>
+                  <div className="relative inline-flex items-center">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer"
+                      checked={meta.isLiveBlog}
+                      onChange={(e) => {
+                        setMeta(m => ({ 
+                          ...m, 
+                          isLiveBlog: e.target.checked
+                        }));
+                      }}
+                      disabled={!canEdit}
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-500"></div>
+                  </div>
+                </label>
+
+                {meta.isLiveBlog && !isNew && (
+                  <div className="pt-4 border-t border-slate-100 space-y-3">
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Add Live Entry</h4>
+                    <input
+                      type="text"
+                      placeholder="Update headline/title..."
+                      id="live-update-title"
+                      className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-rose-500 bg-white"
+                    />
+                    <textarea
+                      placeholder="Update body text..."
+                      id="live-update-content"
+                      rows={3}
+                      className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-rose-500 resize-none bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const titleEl = document.getElementById('live-update-title');
+                        const contentEl = document.getElementById('live-update-content');
+                        if (!titleEl.value.trim() || !contentEl.value.trim()) {
+                          alert('Please enter both a title and content for the live update.');
+                          return;
+                        }
+                        try {
+                          const { data } = await api.post(`/posts/${id}/live-updates`, {
+                            title: titleEl.value,
+                            content: contentEl.value
+                          });
+                          if (data.success) {
+                            alert('Live update published successfully!');
+                            titleEl.value = '';
+                            contentEl.value = '';
+                          }
+                        } catch (err) {
+                          alert(err.response?.data?.message || 'Failed to post live update');
+                        }
+                      }}
+                      className="w-full py-2 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                    >
+                      Post Live Update
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
             </>
-          ) : (
-            <CommentThreadPanel 
-              comments={comments} 
-              setComments={setComments} 
-              postId={id} 
-              user={user} 
-              activeCommentId={activeCommentId} 
-              editor={editor}
-            />
-          )}
+            )}
+            
+            {rightPanel === 'ai' && (
+              <AIAssistantPanel
+                editor={editor}
+                meta={meta}
+                setMeta={setMeta}
+              />
+            )}
+            
+            {rightPanel === 'comments' && !isNew && (
+              <CommentThreadPanel 
+                comments={comments} 
+                setComments={setComments} 
+                postId={id} 
+                user={user} 
+                activeCommentId={activeCommentId} 
+                editor={editor}
+              />
+            )}
           </div>
         </div>
       )}
@@ -1303,6 +1734,422 @@ export default function PostEditor() {
             </div>
             <div className="flex-1 overflow-hidden p-4">
               <MediaLibrary onSelect={handleMediaSelect} pickerMode={true} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Poll Creation Modal */}
+      {showPollModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl animate-fade-in relative flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <h2 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                <span className="text-theme-purple">📊</span> Create Opinion Poll
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPollModal(false);
+                  setPollQuestion('');
+                  setPollOptions(['', '']);
+                  setPollError('');
+                }}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-50 text-slate-500 hover:bg-slate-200 transition-colors shadow-sm text-lg"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+              {pollError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl font-semibold">
+                  ⚠️ {pollError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                  Poll Question
+                </label>
+                <input
+                  type="text"
+                  placeholder="What would you like to ask readers?"
+                  value={pollQuestion}
+                  onChange={(e) => setPollQuestion(e.target.value)}
+                  className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-theme-purple/30 focus:border-theme-purple bg-slate-50/50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                  Answer Options
+                </label>
+                <div className="space-y-3">
+                  {pollOptions.map((option, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <input
+                        type="text"
+                        placeholder={`Option ${idx + 1}...`}
+                        value={option}
+                        onChange={(e) => {
+                          const newOpts = [...pollOptions];
+                          newOpts[idx] = e.target.value;
+                          setPollOptions(newOpts);
+                        }}
+                        className="flex-1 text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-theme-purple/30 focus:border-theme-purple bg-slate-50/50"
+                      />
+                      {pollOptions.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newOpts = pollOptions.filter((_, i) => i !== idx);
+                            setPollOptions(newOpts);
+                          }}
+                          className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                          title="Remove option"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setPollOptions([...pollOptions, ''])}
+                  className="mt-3 text-xs font-bold text-theme-purple hover:text-purple-700 flex items-center gap-1 transition-colors"
+                >
+                  ➕ Add another option
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPollModal(false);
+                  setPollQuestion('');
+                  setPollOptions(['', '']);
+                  setPollError('');
+                }}
+                className="flex-1 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 font-bold text-sm rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!pollQuestion.trim()) {
+                    setPollError('Question is required');
+                    return;
+                  }
+                  const activeOpts = pollOptions.map(o => o.trim()).filter(Boolean);
+                  if (activeOpts.length < 2) {
+                    setPollError('Please provide at least 2 non-empty options');
+                    return;
+                  }
+
+                  setInsertingPoll(true);
+                  setPollError('');
+                  try {
+                    const res = await api.post('/posts/polls', {
+                      question: pollQuestion,
+                      options: activeOpts
+                    });
+
+                    if (res.data?.success && editor) {
+                      const newId = res.data.data._id;
+                      editor.chain().focus().insertContent({
+                        type: 'poll',
+                        attrs: { pollId: newId }
+                      }).run();
+                      
+                      setShowPollModal(false);
+                      setPollQuestion('');
+                      setPollOptions(['', '']);
+                    } else {
+                      setPollError('Failed to create poll on backend');
+                    }
+                  } catch (err) {
+                    console.error('Failed to insert poll', err);
+                    setPollError(err.response?.data?.message || 'Error inserting poll');
+                  } finally {
+                    setInsertingPoll(false);
+                  }
+                }}
+                disabled={insertingPoll}
+                className="flex-1 py-2.5 bg-theme-purple hover:bg-purple-600 text-white font-bold text-sm rounded-xl transition-colors disabled:opacity-50"
+              >
+                {insertingPoll ? 'Creating...' : 'Insert Poll'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Magic Writer Modal */}
+      {showWriterModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl animate-fade-in relative flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <h2 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-purple-600">🪄</span> AI Magic Writer
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowWriterModal(false);
+                  setWriterPrompt('');
+                  setWriterError('');
+                }}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-50 text-slate-500 hover:bg-slate-200 transition-colors shadow-sm text-lg"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+              {writerError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl font-semibold">
+                  ⚠️ {writerError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                  What should the AI research and write about?
+                </label>
+                <textarea
+                  rows={4}
+                  placeholder="E.g., Recent space exploration breakthroughs in 2026, or Apple's latest product launches..."
+                  value={writerPrompt}
+                  onChange={(e) => setWriterPrompt(e.target.value)}
+                  className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-theme-purple/30 focus:border-theme-purple bg-slate-50/50 resize-none"
+                />
+                <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                  This tool searches the web using Gemini's live Google Search grounding to obtain the latest information, and writes a detailed news article.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowWriterModal(false);
+                  setWriterPrompt('');
+                  setWriterError('');
+                }}
+                className="flex-1 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 font-bold text-sm rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!writerPrompt.trim()) {
+                    setWriterError('Please enter a research prompt');
+                    return;
+                  }
+
+                  setWritingArticle(true);
+                  setWriterError('');
+                  try {
+                    const res = await api.post('/admin/ai/generate-article', {
+                      prompt: writerPrompt
+                    });
+
+                    if (res.data?.success && editor) {
+                      const { title, contentHtml } = res.data.data;
+                      
+                      // Prefill the title
+                      setMeta(m => ({
+                        ...m,
+                        title: title || m.title
+                      }));
+
+                      // Prefill the Tiptap editor content
+                      editor.commands.setContent(contentHtml);
+                      
+                      // Also update preview HTML
+                      setPreviewHtml(contentHtml);
+
+                      setShowWriterModal(false);
+                      setWriterPrompt('');
+                    } else {
+                      setWriterError('Failed to generate article content');
+                    }
+                  } catch (err) {
+                    console.error('Failed to generate article', err);
+                    setWriterError(err.response?.data?.message || 'Error communicating with AI magic writer');
+                  } finally {
+                    setWritingArticle(false);
+                  }
+                }}
+                disabled={writingArticle}
+                className="flex-1 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-bold text-sm rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                {writingArticle ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>Researching & Writing...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>🪄</span>
+                    <span>Write Article</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Magic Edit Modal */}
+      {showAiEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl animate-fade-in relative flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <h2 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-500">🪄</span> AI Magic Edit
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAiEditModal(false);
+                  setAiInstruction('');
+                  setAiEditError('');
+                }}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-50 text-slate-500 hover:bg-slate-200 transition-colors shadow-sm text-lg"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+              {aiEditError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl font-semibold">
+                  ⚠️ {aiEditError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                  What should the AI do with the article text?
+                </label>
+                <textarea
+                  rows={4}
+                  placeholder="E.g., Rewrite in a more professional tone, translate to French, add a brief summary at the end, shorten sentences..."
+                  value={aiInstruction}
+                  onChange={(e) => setAiInstruction(e.target.value)}
+                  className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-theme-purple/30 focus:border-theme-purple bg-slate-50/50 resize-none"
+                />
+                <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                  Provide instructions to rewrite, adjust tone, translate, expand, or format the text of the article currently in the editor.
+                </p>
+              </div>
+
+              {/* Preset Quick Actions */}
+              <div className="space-y-2">
+                <span className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Quick Actions</span>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    'Rewrite in a more dramatic tone',
+                    'Make it highly professional and official',
+                    'Fix spelling, grammar, and typos',
+                    'Summarize and make it concise',
+                    'Add an expert quote block'
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setAiInstruction(preset)}
+                      className="text-xs bg-slate-100 hover:bg-theme-purple hover:text-white px-2.5 py-1.5 rounded-lg text-slate-700 transition-all font-medium border border-slate-200/50 cursor-pointer"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAiEditModal(false);
+                  setAiInstruction('');
+                  setAiEditError('');
+                }}
+                className="flex-1 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 font-bold text-sm rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!aiInstruction.trim()) {
+                    setAiEditError('Please enter an instruction');
+                    return;
+                  }
+
+                  setEditingArticleBody(true);
+                  setAiEditError('');
+                  try {
+                    const currentHtml = editor?.getHTML() || '';
+                    const res = await api.post('/admin/ai/edit-article', {
+                      contentHtml: currentHtml,
+                      instruction: aiInstruction
+                    });
+
+                    if (res.data?.success && editor) {
+                      const { contentHtml } = res.data.data;
+                      
+                      // Replace the Tiptap editor content
+                      editor.commands.setContent(contentHtml);
+                      
+                      // Also update preview HTML
+                      setPreviewHtml(contentHtml);
+
+                      setShowAiEditModal(false);
+                      setAiInstruction('');
+                    } else {
+                      setAiEditError('Failed to apply AI edit');
+                    }
+                  } catch (err) {
+                    console.error('Failed to edit article', err);
+                    setAiEditError(err.response?.data?.message || 'Error communicating with AI magic edit');
+                  } finally {
+                    setEditingArticleBody(false);
+                  }
+                }}
+                disabled={editingArticleBody}
+                className="flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-bold text-sm rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                {editingArticleBody ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>Processing Edit...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>🪄</span>
+                    <span>Apply Magic Edit</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

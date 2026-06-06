@@ -93,6 +93,10 @@ const postSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  isPremium: {
+    type: Boolean,
+    default: false,
+  },
   sliderOrder: {
     type: Number,
     default: 0,
@@ -154,6 +158,15 @@ const postSchema = new mongoose.Schema({
     type: Number,
     default: 1,
   },
+  isLiveBlog: {
+    type: Boolean,
+    default: false,
+  },
+  liveUpdates: [{
+    title: { type: String, required: true },
+    content: { type: String, required: true },
+    publishedAt: { type: Date, default: Date.now }
+  }],
   deletedAt: {
     type: Date,
     default: null,

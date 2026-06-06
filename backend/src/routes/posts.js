@@ -10,6 +10,7 @@ import {
   deletePost,
   restorePost,
   reorderSlider,
+  addLiveUpdate,
 } from '../controllers/posts.controller.js';
 import { authenticate, checkActive } from '../middleware/authenticate.js';
 import { authorize, hasPermission } from '../middleware/authorize.js';
@@ -59,5 +60,12 @@ router.post('/:id/revisions/:version/restore', restoreRevision);
 
 // Comments sub-router
 router.use('/:postId/comments', commentRoutes);
+
+// Rolling Live Blog Updates
+router.post('/:id/live-updates', addLiveUpdate);
+
+// Opinion Poll Creation
+import { createPoll } from '../controllers/polls.controller.js';
+router.post('/polls', createPoll);
 
 export default router;

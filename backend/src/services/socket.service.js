@@ -14,22 +14,39 @@ export const initSocket = (httpServer) => {
 
   io.use((socket, next) => {
     try {
-      const token = socket.handshake.auth.token;
-      if (!token) return next(new Error('Authentication error: Missing token'));
+      const token = socket.handshake.auth?.token;
+      if (!token) {
+        socket.user = null;
+        return next();
+      }
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       socket.user = decoded;
       next();
     } catch (err) {
-      next(new Error('Authentication error: Invalid token'));
+      // Treat invalid token as guest instead of rejecting connection
+      socket.user = null;
+      next();
     }
   });
 
   io.on('connection', (socket) => {
-    console.log(`Socket connected: ${socket.id} (User: ${socket.user.id})`);
+    console.log(`Socket connected: ${socket.id} (User: ${socket.user ? socket.user.id : 'Guest'})`);
     
-    // Join a room specifically for this user's notifications
-    socket.join(`user_${socket.user.id}`);
+    if (socket.user) {
+      socket.join(`user_${socket.user.id}`);
+    }
+
+    // Live Blog Room Handling
+    socket.on('join_article', (slug) => {
+      socket.join(`article_${slug}`);
+      console.log(`Socket ${socket.id} joined article room: article_${slug}`);
+    });
+
+    socket.on('leave_article', (slug) => {
+      socket.leave(`article_${slug}`);
+      console.log(`Socket ${socket.id} left article room: article_${slug}`);
+    });
 
     socket.on('disconnect', () => {
       console.log(`Socket disconnected: ${socket.id}`);

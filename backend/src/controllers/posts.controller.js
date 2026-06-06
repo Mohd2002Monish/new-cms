@@ -1,6 +1,7 @@
 import { Post } from '../models/Post.js';
 import { User } from '../models/User.js';
 import Joi from 'joi';
+import { getIO } from '../services/socket.service.js';
 import * as audit from '../services/audit.service.js';
 import * as notification from '../services/notification.service.js';
 import * as postRevisionService from '../services/postRevision.service.js';
@@ -35,6 +36,8 @@ const createPostSchema = Joi.object({
   priority: Joi.string().valid('normal', 'high', 'urgent').optional(),
   breakingExpiresAt: Joi.date().optional().allow(null),
   coAuthors: Joi.array().items(Joi.string().hex().length(24)).optional(),
+  status: Joi.string().valid('draft', 'live', 'pending_approval').optional(),
+  isLiveBlog: Joi.boolean().optional(),
 });
 
 const updatePostSchema = Joi.object({
@@ -65,6 +68,8 @@ const updatePostSchema = Joi.object({
   priority: Joi.string().valid('normal', 'high', 'urgent').optional(),
   breakingExpiresAt: Joi.date().optional().allow(null),
   coAuthors: Joi.array().items(Joi.string().hex().length(24)).optional(),
+  status: Joi.string().valid('draft', 'live', 'pending_approval').optional(),
+  isLiveBlog: Joi.boolean().optional(),
 });
 
 const rejectSchema = Joi.object({
@@ -190,6 +195,10 @@ export const createPost = async (req, res, next) => {
       delete value.coAuthors;
     }
 
+    if (req.user.role !== 'admin') {
+      delete value.status;
+    }
+
     // Determine assigned manager: use editor's assignedManager field
     let assignedManager = null;
     if (req.user.role === 'editor') {
@@ -199,16 +208,25 @@ export const createPost = async (req, res, next) => {
       assignedManager = req.user._id;
     }
 
+    // Determine status & publication time
+    let status = 'draft';
+    let publishedAt = null;
+    if (req.user.role === 'admin' && value.status === 'live') {
+      status = 'live';
+      publishedAt = new Date();
+    }
+
     const post = await Post.create({
       ...value,
       author: req.user._id,
       assignedManager,
-      status: 'draft',
+      status,
+      publishedAt,
     });
 
     await audit.log({
       req, action: 'POST_CREATED', targetType: 'Post', targetId: post._id, targetLabel: post.title,
-      newState: { status: 'draft' }
+      newState: { status }
     });
 
     await postRevisionService.snapshot(post, req.user._id);
@@ -256,8 +274,19 @@ export const updatePost = async (req, res, next) => {
       delete value.coAuthors;
     }
 
+    if (req.user.role !== 'admin') {
+      delete value.status;
+    }
+
     // If editing a rejected post, move it back to draft
     if (post.status === 'rejected') value.status = 'draft';
+
+    // If admin is publishing directly
+    if (req.user.role === 'admin' && value.status === 'live') {
+      if (!post.publishedAt) {
+        post.publishedAt = new Date();
+      }
+    }
 
     const previousState = { title: post.title, status: post.status };
     Object.assign(post, value);
@@ -562,6 +591,67 @@ export const reorderSlider = async (req, res, next) => {
     });
 
     res.json({ success: true, message: 'Slider order updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/posts/:id/live-updates
+ * Adds a rolling live update to a post and pushes it in real-time via Socket.io.
+ */
+export const addLiveUpdate = async (req, res, next) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+
+    const { title, content } = req.body;
+    if (!title || !content) {
+      return res.status(400).json({ success: false, message: 'title and content are required' });
+    }
+
+    // Access control: only the author, co-author, or manager/admin can update
+    const isOwner = post.author.toString() === req.user._id.toString();
+    const isCoAuthor = post.coAuthors.some(id => id.toString() === req.user._id.toString());
+    const isAuthorized = ['admin', 'manager'].includes(req.user.role);
+
+    if (!isOwner && !isCoAuthor && !isAuthorized) {
+      return res.status(403).json({ success: false, message: 'Access denied: You cannot update this live blog' });
+    }
+
+    // Add update
+    const newUpdate = {
+      title,
+      content,
+      publishedAt: new Date()
+    };
+
+    post.liveUpdates.push(newUpdate);
+    post.isLiveBlog = true;
+    await post.save();
+
+    const savedUpdate = post.liveUpdates[post.liveUpdates.length - 1];
+
+    // Emit live update via Socket.io to the room: article_${post.slug}
+    try {
+      const io = getIO();
+      io.to(`article_${post.slug}`).emit('live_update_added', {
+        postSlug: post.slug,
+        update: savedUpdate
+      });
+    } catch (socketErr) {
+      console.error('Failed to emit live update via socket', socketErr);
+    }
+
+    // Audit log
+    await audit.log({
+      req, action: 'LIVE_UPDATE_ADDED', targetType: 'Post', targetId: post._id, targetLabel: post.title,
+      newState: { liveUpdateId: savedUpdate._id }
+    });
+
+    res.status(201).json({ success: true, data: savedUpdate });
   } catch (error) {
     next(error);
   }

@@ -1,73 +1,84 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { Flame } from 'lucide-react';
+import { Flame, Newspaper } from 'lucide-react';
 import { timeAgo, buildImageUrl } from '@/lib/utils';
 
 /**
- * TrendingSidebar — shows top articles ranked by view count.
- * Server component — data is fetched in the parent (page.js) and passed as props.
+ * TrendingSidebar v2.0 — "Trending Now" panel with numbered items,
+ * 52×52px square thumbnails, faint horizontal rules, and the
+ * redesigned card layout from the design spec.
  *
+ * Server component — data is fetched in the parent (page.js) and passed as props.
  * @param {Array} articles — top trending articles from /api/public/articles/trending
  */
 export default function TrendingSidebar({ articles = [] }) {
   return (
-    <aside className="trending-sidebar" aria-label="Trending articles">
-      {/* Section heading */}
-      <div className="section-heading">
-        <div className="section-heading-line" aria-hidden="true" />
-        <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Flame size={24} style={{ color: 'var(--color-brand)' }} /> Trending
-        </h2>
+    <aside className="trending-panel" aria-label="Trending articles">
+      {/* Panel header */}
+      <div className="trending-panel-header">
+        <Flame size={18} style={{ color: '#C0392B', flexShrink: 0 }} aria-hidden="true" />
+        <h2 className="trending-panel-title">Trending Now</h2>
       </div>
 
       {articles.length === 0 ? (
-        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', padding: 'var(--space-4)' }}>
+        <p style={{ padding: '16px', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
           No trending articles yet.
         </p>
       ) : (
-        <ol className="trending-list" aria-label="Top trending articles">
-          {articles.map((article, index) => {
+        <ol className="trending-panel-list" aria-label="Top trending articles">
+          {articles.slice(0, 5).map((article, index) => {
             const thumbUrl = buildImageUrl(article.featuredImage?.url, { width: 128 });
             return (
               <li key={article._id || article.slug}>
                 <Link
                   href={`/articles/${article.slug}`}
-                  className="trending-item"
+                  className="trending-panel-item"
                   aria-label={`${index + 1}. ${article.title}`}
                 >
-                  {/* Rank number */}
-                  <span className="trending-rank" aria-hidden="true">
+                  {/* Large faded red rank number */}
+                  <span className="trending-panel-rank" aria-hidden="true">
                     {index + 1}
                   </span>
 
-                  {/* Thumbnail */}
-                  {thumbUrl && (
-                    <div className="trending-thumb">
+                  {/* 52×52 square thumbnail */}
+                  <div className="trending-panel-thumb">
+                    {thumbUrl ? (
                       <Image
                         src={thumbUrl}
                         alt=""
                         fill
-                        sizes="64px"
+                        sizes="52px"
                         style={{ objectFit: 'cover' }}
                         aria-hidden="true"
                       />
-                    </div>
-                  )}
+                    ) : (
+                      <div
+                        style={{
+                          width: '100%', height: '100%',
+                          background: 'linear-gradient(135deg, #4a0e0e, #8b1a1a)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                        aria-hidden="true"
+                      >
+                        <Newspaper size={20} style={{ color: 'rgba(255,255,255,0.6)' }} />
+                      </div>
+                    )}
+                  </div>
 
                   {/* Title + meta */}
-                  <div className="trending-body">
-                    <p className="trending-title">{article.title}</p>
-                    <div className="trending-meta">
+                  <div className="trending-panel-body">
+                    <p className="trending-panel-item-title">{article.title}</p>
+                    <div className="trending-panel-item-meta">
                       {article.publishedAt && (
                         <time dateTime={article.publishedAt}>
                           {timeAgo(article.publishedAt)}
                         </time>
                       )}
+                      {article.views > 0 && article.publishedAt && (
+                        <span aria-hidden="true">·</span>
+                      )}
                       {article.views > 0 && (
-                        <>
-                          <span aria-hidden="true">·</span>
-                          <span>{article.views.toLocaleString()} views</span>
-                        </>
+                        <span>{article.views.toLocaleString()} views</span>
                       )}
                     </div>
                   </div>

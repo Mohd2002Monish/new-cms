@@ -2,6 +2,7 @@
 
 import { Bookmark } from 'lucide-react';
 import { useBookmarks } from '@/hooks/useBookmarks';
+import { useAuth } from '@/context/AuthContext';
 
 /**
  * Renders a bookmark icon that toggles the saved state of an article slug.
@@ -12,6 +13,7 @@ import { useBookmarks } from '@/hooks/useBookmarks';
  */
 export default function BookmarkButton({ slug, showLabel = false, className = '' }) {
   const { toggleBookmark, isBookmarked, isLoaded } = useBookmarks();
+  const { user, openAuthModal } = useAuth();
 
   // Return a non-interactive placeholder to prevent hydration mismatch
   // while we figure out if this article is saved
@@ -30,6 +32,10 @@ export default function BookmarkButton({ slug, showLabel = false, className = ''
     <button
       onClick={(e) => {
         e.preventDefault(); // prevent navigation if placed inside a Link component
+        if (!user) {
+          openAuthModal();
+          return;
+        }
         toggleBookmark(slug);
       }}
       className={`bookmark-btn ${saved ? 'active' : ''} ${className}`}

@@ -1,12 +1,13 @@
 import { publicApi } from '@/lib/api';
 import HeroSlider from '@/components/HeroSlider';
-import CategoryTabStrip from '@/components/CategoryTabStrip';
-import LatestNewsGrid from '@/components/LatestNewsGrid';
+import FilterBar from '@/components/FilterBar';
+import CategoryRail from '@/components/CategoryRail';
 import TrendingSidebar from '@/components/TrendingSidebar';
+import NewsletterBox from '@/components/NewsletterBox';
+import ForYouRail from '@/components/ForYouRail';
+import { Newspaper } from 'lucide-react';
 
-const GRID_PAGE_SIZE = 9;
-
-export const revalidate = 60; // Enable ISR caching (60 seconds)
+export const revalidate = 60; // ISR — revalidate every 60s
 
 export const metadata = {
   title: 'NewsPortal — Latest News & Breaking Stories',
@@ -17,62 +18,83 @@ export const metadata = {
 // ─── Server-side data fetching ────────────────────────────────────────────────
 
 async function fetchAll() {
-  const [gridRes, trendingRes, categoriesRes] = await Promise.allSettled([
-    // Grid — page 1 of all latest
-    publicApi.getArticles({ sort: 'latest', page: 1, limit: GRID_PAGE_SIZE }),
-    // Trending — top 5 by view count
+  const [trendingRes, categoriesRes] = await Promise.allSettled([
     publicApi.getTrending(5),
-    // Categories for tab strip
     publicApi.getCategories(),
   ]);
 
-  return {
-    grid:       gridRes.status       === 'fulfilled' ? gridRes.value              : { data: [], pagination: {} },
-    trending:   trendingRes.status   === 'fulfilled' ? (trendingRes.value?.data   || []) : [],
-    categories: categoriesRes.status === 'fulfilled' ? (categoriesRes.value?.data || []) : [],
-  };
+  const categories =
+    categoriesRes.status === 'fulfilled' ? categoriesRes.value?.data || [] : [];
+  const trending =
+    trendingRes.status === 'fulfilled' ? trendingRes.value?.data || [] : [];
+
+  // Fetch 3 articles per category in parallel
+  const categoryArticlesResults = await Promise.allSettled(
+    categories.map((cat) =>
+      publicApi.getArticlesByCategory(cat.slug, { limit: 3, sort: 'latest' })
+    )
+  );
+
+  const categoryArticles = categories.map((cat, idx) => ({
+    category: cat,
+    articles:
+      categoryArticlesResults[idx].status === 'fulfilled'
+        ? categoryArticlesResults[idx].value?.data || []
+        : [],
+  }));
+
+  return { trending, categories, categoryArticles };
 }
 
-// ─── Homepage Page Component ──────────────────────────────────────────────────
+// ─── Homepage ─────────────────────────────────────────────────────────────────
 
 export default async function HomePage() {
-  const { grid, trending, categories } = await fetchAll();
-
-  const gridArticles   = grid.data       || [];
-  const gridTotal      = grid.pagination?.total || 0;
+  const { trending, categories, categoryArticles } = await fetchAll();
 
   return (
     <>
-      {/* ── Hero Slider ─────────────────────────────── */}
+      {/* ── Hero Slider ─────────────────────────────────────────────────── */}
       <HeroSlider />
 
-      {/* ── Main content area ─────────────────────────────────────────────── */}
-      <div className="container">
-        <div className="home-layout">
+      {/* ── Filter Bar ──────────────────────────────────────────────────── */}
+      <FilterBar categories={categories} activeSlug={null} />
 
-          {/* ── Left column: category tabs + news grid ──────────────────── */}
-          <div>
-            {/* Category tab strip */}
-            <CategoryTabStrip categories={categories} activeSlug={null} />
+      {/* ── Main two-column layout ───────────────────────────────────────── */}
+      <div className="dashboard-layout">
 
-            {/* Section heading */}
-            <div className="section-heading">
-              <div className="section-heading-line" aria-hidden="true" />
-              <h2>Latest News</h2>
-            </div>
+        {/* ── Left column: category rails ─────────────────────────────── */}
+        <div className="category-rails-area">
+          <ForYouRail />
 
-            {/* Load-more article grid (client component) */}
-            <LatestNewsGrid
-              initialArticles={gridArticles}
-              initialTotal={gridTotal}
-              initialPage={1}
-              category={null}
+          {categoryArticles.map(({ category, articles }) => (
+            <CategoryRail
+              key={category._id || category.slug}
+              category={category}
+              articles={articles}
             />
-          </div>
+          ))}
 
-          {/* ── Right column: trending sidebar ──────────────────────────── */}
-          <TrendingSidebar articles={trending} />
+          {categoryArticles.length === 0 && (
+            <div style={{
+              textAlign: 'center', padding: '48px 16px',
+              color: 'var(--color-text-secondary)',
+              background: 'var(--color-bg-alt)',
+              borderRadius: '12px',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+                <Newspaper size={40} style={{ opacity: 0.4 }} />
+              </div>
+              <p style={{ fontWeight: 600 }}>No articles yet. Check back soon!</p>
+            </div>
+          )}
         </div>
+
+        {/* ── Right column: trending + newsletter ─────────────────────── */}
+        <div className="dashboard-right-sidebar">
+          <TrendingSidebar articles={trending} />
+          <NewsletterBox />
+        </div>
+
       </div>
     </>
   );

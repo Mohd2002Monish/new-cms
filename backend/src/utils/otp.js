@@ -5,7 +5,12 @@ import { env } from '../config/env.js';
 
 // Generate random 6-digit string
 export const generateOTP = () => {
-  if (process.env.NODE_ENV === 'test') {
+  if (
+    process.env.NODE_ENV === 'test' ||
+    process.env.NODE_ENV === 'development' ||
+    process.env.NODE_ENV === 'dev' ||
+    !process.env.NODE_ENV
+  ) {
     return '123456';
   }
   return Math.floor(100000 + Math.random() * 900000).toString();

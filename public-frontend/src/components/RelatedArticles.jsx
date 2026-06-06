@@ -1,18 +1,31 @@
+'use client';
+
+import { useState, useEffect } from 'react';
 import { publicApi } from '@/lib/api';
 import ArticleCard from './ArticleCard';
 
-export default async function RelatedArticles({ slug, categoryName }) {
-  let related = [];
-  try {
-    const res = await publicApi.getRelatedArticles(slug);
-    if (res?.success) {
-      related = res.data || [];
-    }
-  } catch (err) {
-    console.error('Failed to fetch related articles:', err);
-  }
+export default function RelatedArticles({ slug, categoryName }) {
+  const [related, setRelated] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  if (related.length === 0) return null;
+  useEffect(() => {
+    if (!slug) return;
+    setLoading(true);
+    publicApi.getRelatedArticles(slug)
+      .then((res) => {
+        if (res?.success) {
+          setRelated(res.data || []);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch related articles:', err);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [slug]);
+
+  if (loading || related.length === 0) return null;
 
   return (
     <div className="related-articles-section">

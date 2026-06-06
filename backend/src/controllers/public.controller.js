@@ -3,6 +3,9 @@ import { Category } from '../models/Category.js';
 import { ArticleReaction } from '../models/ArticleReaction.js';
 import { ArticleComment } from '../models/ArticleComment.js';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import { env } from '../config/env.js';
+import { User } from '../models/User.js';
 
 // ─── Internal fields stripped from every public response ─────────────────────
 const PUBLIC_POST_FIELDS = `-rejectionReason -deletedAt -deletedBy -reviewedBy
@@ -143,7 +146,73 @@ export const getPublicArticleBySlug = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Article not found' });
     }
 
-    res.json({ success: true, data: post });
+    // Determine user session from Authorization header
+    let user = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      try {
+        const decoded = jwt.verify(token, env.JWT_SECRET);
+        user = await User.findById(decoded.id);
+      } catch (err) {
+        // Ignore invalid token
+      }
+    }
+
+    // Paywall rules
+    const monthlyLimit = 5;
+    let paywallLocked = false;
+    let lockReason = ''; // 'premium_login_required', 'premium_subscription_required', 'limit_exceeded'
+
+    if (post.isPremium) {
+      if (!user) {
+        paywallLocked = true;
+        lockReason = 'premium_login_required';
+      } else if (!user.isPremiumUser) {
+        paywallLocked = true;
+        lockReason = 'premium_subscription_required';
+      }
+    } else {
+      // Metered views check
+      if (user) {
+        if (!user.isPremiumUser) {
+          const hasRead = user.readArticles && user.readArticles.includes(post.slug);
+          if (!hasRead) {
+            if (user.monthlyViewsCount >= monthlyLimit) {
+              paywallLocked = true;
+              lockReason = 'limit_exceeded';
+            } else {
+              user.monthlyViewsCount += 1;
+              await user.save();
+            }
+          }
+        }
+      }
+    }
+
+    if (paywallLocked) {
+      // Return redacted version of the article
+      const lockedPost = {
+        ...post,
+        content: null, // strip ProseMirror/Tiptap structure
+        contentHtml: '', // strip HTML string
+        isLocked: true,
+        lockReason,
+        monthlyViewsCount: user ? user.monthlyViewsCount : 0,
+        monthlyLimit
+      };
+      return res.json({ success: true, data: lockedPost });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        ...post,
+        isLocked: false,
+        monthlyViewsCount: user ? user.monthlyViewsCount : 0,
+        monthlyLimit
+      }
+    });
   } catch (error) {
     next(error);
   }
@@ -509,6 +578,380 @@ export const addArticleComment = async (req, res, next) => {
     });
 
     res.status(201).json({ success: true, data: comment });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ─── Reader Profile Sync & Recommendations ─────────────────────────────────────
+
+/**
+ * POST /api/public/user/read-articles
+ * Add a read article slug to logged-in user history.
+ */
+export const updateReadArticles = async (req, res, next) => {
+  try {
+    const { slug } = req.body;
+    if (!slug) {
+      return res.status(400).json({ success: false, message: 'Slug is required' });
+    }
+
+    if (!req.user.trackingEnabled) {
+      return res.json({ success: true, trackingDisabled: true });
+    }
+
+    // Update streak (Duolingo-style reading streaks)
+    const now = new Date();
+    const lastRead = req.user.lastReadDate;
+    if (!lastRead) {
+      req.user.readingStreak = 1;
+    } else {
+      const msDiff = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - 
+                     new Date(lastRead.getFullYear(), lastRead.getMonth(), lastRead.getDate()).getTime();
+      const dayDiff = Math.floor(msDiff / (24 * 60 * 60 * 1000));
+      if (dayDiff === 1) {
+        req.user.readingStreak += 1;
+      } else if (dayDiff > 1) {
+        req.user.readingStreak = 1;
+      }
+    }
+    req.user.lastReadDate = now;
+
+    if (!req.user.readArticles.includes(slug)) {
+      req.user.readArticles.push(slug);
+    }
+
+    await req.user.save();
+    res.json({ success: true, readArticles: req.user.readArticles, streak: req.user.readingStreak });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/public/user/interests
+ * Increment category interest score for logged-in user.
+ */
+export const updateInterests = async (req, res, next) => {
+  try {
+    const { categorySlug } = req.body;
+    if (!categorySlug) {
+      return res.status(400).json({ success: false, message: 'categorySlug is required' });
+    }
+
+    if (!req.user.trackingEnabled) {
+      return res.json({ success: true, trackingDisabled: true });
+    }
+
+    const currentScore = req.user.interests.get(categorySlug) || 0;
+    req.user.interests.set(categorySlug, currentScore + 1);
+    await req.user.save();
+
+    res.json({ success: true, interests: Object.fromEntries(req.user.interests) });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/public/articles/recommendations
+ * Returns up to 4 personalized recommendations based on interests.
+ */
+export const getArticleRecommendations = async (req, res, next) => {
+  try {
+    const readSlugs = req.user.readArticles || [];
+    const userInterests = req.user.interests ? Object.fromEntries(req.user.interests) : {};
+
+    // Sort interest categories by score descending
+    const sortedCategories = Object.entries(userInterests)
+      .sort((a, b) => b[1] - a[1])
+      .map(entry => entry[0]);
+
+    let recommendedPosts = [];
+
+    if (sortedCategories.length > 0) {
+      // Find category documents to get their IDs
+      const categoryDocs = await Category.find({ slug: { $in: sortedCategories }, isActive: true });
+      const categoryIdMap = categoryDocs.reduce((acc, cat) => {
+        acc[cat.slug] = cat._id;
+        return acc;
+      }, {});
+
+      // Build target IDs list in sorted order of interest
+      const sortedIds = sortedCategories
+        .map(slug => categoryIdMap[slug])
+        .filter(Boolean);
+
+      if (sortedIds.length > 0) {
+        // Query database excluding read articles
+        recommendedPosts = await Post.find({
+          status: 'live',
+          deletedAt: null,
+          slug: { $nin: readSlugs },
+          category: { $in: sortedIds }
+        })
+          .populate('author', 'name')
+          .populate('category', 'name slug')
+          .select('title slug excerpt featuredImage category author publishedAt readingTimeMinutes views isBreaking')
+          .limit(4)
+          .lean();
+
+        // Sort posts dynamically according to category interest weight
+        const idWeights = {};
+        sortedIds.forEach((id, idx) => {
+          idWeights[id.toString()] = idx;
+        });
+
+        recommendedPosts.sort((a, b) => {
+          const weightA = idWeights[a.category?._id?.toString()] ?? 999;
+          const weightB = idWeights[b.category?._id?.toString()] ?? 999;
+          return weightA - weightB;
+        });
+      }
+    }
+
+    // Backfill with general trending/recent posts if we have less than 4 recommendations
+    if (recommendedPosts.length < 4) {
+      const needed = 4 - recommendedPosts.length;
+      const existingIds = recommendedPosts.map(p => p._id);
+      
+      const backfill = await Post.find({
+        status: 'live',
+        deletedAt: null,
+        _id: { $nin: existingIds },
+        slug: { $nin: readSlugs }
+      })
+        .sort({ views: -1, publishedAt: -1 })
+        .limit(needed)
+        .populate('author', 'name')
+        .populate('category', 'name slug')
+        .select('title slug excerpt featuredImage category author publishedAt readingTimeMinutes views isBreaking')
+        .lean();
+
+      recommendedPosts = [...recommendedPosts, ...backfill];
+    }
+
+    res.json({ success: true, data: recommendedPosts });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ─── Reader Cloud Bookmarks Sync ───────────────────────────────────────────────
+
+/**
+ * POST /api/public/user/bookmarks
+ * Toggle a bookmark slug in logged-in user history.
+ */
+export const toggleUserBookmark = async (req, res, next) => {
+  try {
+    const { slug } = req.body;
+    if (!slug) {
+      return res.status(400).json({ success: false, message: 'Slug is required' });
+    }
+
+    const index = req.user.bookmarks.indexOf(slug);
+    if (index === -1) {
+      req.user.bookmarks.push(slug);
+    } else {
+      req.user.bookmarks.splice(index, 1);
+    }
+
+    await req.user.save();
+    res.json({ success: true, bookmarks: req.user.bookmarks });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/public/user/bookmarks
+ * Get list of synced bookmark slugs for logged-in user.
+ */
+export const getUserBookmarks = async (req, res, next) => {
+  try {
+    res.json({ success: true, data: req.user.bookmarks || [] });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/public/user/bookmarks/sync
+ * Bulk sync local bookmarks to database on login.
+ */
+export const syncAllUserBookmarks = async (req, res, next) => {
+  try {
+    const { slugs } = req.body;
+    if (!slugs || !Array.isArray(slugs)) {
+      return res.status(400).json({ success: false, message: 'Slugs array is required' });
+    }
+
+    // Merge slugs uniquely
+    const current = new Set(req.user.bookmarks || []);
+    slugs.forEach(s => current.add(s));
+    req.user.bookmarks = Array.from(current);
+
+    await req.user.save();
+    res.json({ success: true, bookmarks: req.user.bookmarks });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/public/user/history
+ * Returns detailed article items matching the user's reading history.
+ */
+export const getUserHistory = async (req, res, next) => {
+  try {
+    const slugs = req.user.readArticles || [];
+    
+    // Check if the streak needs to be reset
+    const now = new Date();
+    const lastRead = req.user.lastReadDate;
+    if (lastRead) {
+      const msDiff = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - 
+                     new Date(lastRead.getFullYear(), lastRead.getMonth(), lastRead.getDate()).getTime();
+      const dayDiff = Math.floor(msDiff / (24 * 60 * 60 * 1000));
+      if (dayDiff > 1) {
+        req.user.readingStreak = 0;
+        await req.user.save();
+      }
+    }
+
+    const posts = await Post.find({ slug: { $in: slugs }, status: 'live', deletedAt: null })
+      .populate('author', 'name')
+      .populate('category', 'name slug')
+      .select('title slug excerpt featuredImage category author publishedAt readingTimeMinutes views')
+      .lean();
+
+    const postMap = posts.reduce((acc, p) => {
+      acc[p.slug] = p;
+      return acc;
+    }, {});
+
+    const orderedPosts = slugs
+      .map(s => postMap[s])
+      .filter(Boolean)
+      .reverse(); // Return most recently read first
+
+    res.json({ success: true, data: orderedPosts });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * DELETE /api/public/user/history
+ * Clears the user's reading history list and interests map.
+ */
+export const clearUserHistory = async (req, res, next) => {
+  try {
+    req.user.readArticles = [];
+    req.user.interests = new Map();
+    await req.user.save();
+    res.json({ success: true, message: 'Reading history cleared successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/public/user/tracking
+ * Body: { enabled: boolean }
+ * Toggles history tracking.
+ */
+export const toggleUserTracking = async (req, res, next) => {
+  try {
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'enabled value must be a boolean' });
+    }
+
+    req.user.trackingEnabled = enabled;
+    await req.user.save();
+    res.json({
+      success: true,
+      trackingEnabled: req.user.trackingEnabled,
+      message: `Reading history tracking has been ${enabled ? 'enabled' : 'disabled'}`
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/public/user/me
+ * Returns reader's details.
+ */
+export const getReaderProfile = async (req, res, next) => {
+  try {
+    const now = new Date();
+    const lastRead = req.user.lastReadDate;
+    if (lastRead) {
+      const msDiff = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - 
+                     new Date(lastRead.getFullYear(), lastRead.getMonth(), lastRead.getDate()).getTime();
+      const dayDiff = Math.floor(msDiff / (24 * 60 * 60 * 1000));
+      if (dayDiff > 1) {
+        req.user.readingStreak = 0;
+        await req.user.save();
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+        role: req.user.role,
+        status: req.user.status,
+        readingStreak: req.user.readingStreak || 0,
+        lastReadDate: req.user.lastReadDate || null,
+        trackingEnabled: req.user.trackingEnabled !== false,
+        bookmarks: req.user.bookmarks || [],
+        isPremiumUser: req.user.isPremiumUser === true,
+        monthlyViewsCount: req.user.monthlyViewsCount || 0
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/public/user/subscribe
+ * Mock endpoint to upgrade reader to Premium.
+ */
+export const subscribeUser = async (req, res, next) => {
+  try {
+    req.user.isPremiumUser = true;
+    await req.user.save();
+    res.json({
+      success: true,
+      isPremiumUser: req.user.isPremiumUser,
+      message: 'Successfully upgraded to Premium Subscription (Mock)!'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/public/user/unsubscribe
+ * Mock endpoint to downgrade reader.
+ */
+export const unsubscribeUser = async (req, res, next) => {
+  try {
+    req.user.isPremiumUser = false;
+    req.user.monthlyViewsCount = 0; // Reset metered counts
+    await req.user.save();
+    res.json({
+      success: true,
+      isPremiumUser: req.user.isPremiumUser,
+      message: 'Successfully unsubscribed from Premium (Mock)!'
+    });
   } catch (error) {
     next(error);
   }

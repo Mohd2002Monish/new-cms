@@ -3,14 +3,41 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Layers, Menu, X, Settings } from 'lucide-react';
+import { 
+  Home, 
+  Search,
+  Bookmark,
+  Settings,
+  LogIn,
+  Flame,
+  Clock
+} from 'lucide-react';
 import { publicApi } from '@/lib/api';
+import { useBookmarks } from '@/hooks/useBookmarks';
+import { useTheme } from 'next-themes';
+import { useAuth } from '@/context/AuthContext';
 
 export default function Sidebar({ isOpen, setIsOpen }) {
   const pathname = usePathname();
   const [categories, setCategories] = useState([]);
+  
+  // Hooks for actual functionality
+  const { bookmarks, isLoaded } = useBookmarks();
+  const { resolvedTheme, setTheme } = useTheme();
+  const { user, openAuthModal, logout: readerLogout } = useAuth();
+  
+  const [mounted, setMounted] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+    
+    // Check auth status from admin panel localStorage
+    const token = localStorage.getItem('accessToken');
+    if (token) {
+      setIsLoggedIn(true);
+    }
+    
     async function loadCats() {
       try {
         const response = await publicApi.getCategories();
@@ -24,115 +51,174 @@ export default function Sidebar({ isOpen, setIsOpen }) {
 
   const toggleSidebar = () => setIsOpen(!isOpen);
 
+  // Prevent hydration mismatch for theme toggle
+  const isDark = mounted && resolvedTheme === 'dark';
+
   return (
     <>
       {/* Mobile Backdrop */}
       {isOpen && (
         <div 
-          className="fixed inset-0 z-40 bg-slate-900/40 lg:hidden backdrop-blur-sm transition-opacity duration-300"
+          className="sidebar-backdrop"
           onClick={() => setIsOpen(false)}
         />
       )}
 
       {/* Sidebar Container */}
-      <aside className={`
-        fixed top-0 left-0 z-50 h-screen w-64 border-r
-        bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800
-        shadow-[4px_0_24px_rgba(0,0,0,0.02)]
-        transition-all duration-400 cubic-bezier(0.4, 0, 0.2, 1) transform
-        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        flex flex-col
-      `}>
-        {/* Logo Area */}
-        <div className="h-20 flex items-center justify-between px-6 shrink-0 border-b border-slate-100 dark:border-slate-800">
-          <Link href="/" className="flex items-center gap-2.5 group" onClick={() => setIsOpen(false)}>
-            <div className="w-8 h-8 rounded-lg bg-rose-600 flex items-center justify-center shadow-md shadow-rose-600/20 group-hover:bg-rose-700 transition-colors">
-              <span className="text-white font-black text-lg leading-none tracking-tighter">N</span>
+      <aside className={`marketerz-sidebar ${isOpen ? '' : 'closed'}`}>
+        
+        {/* Header */}
+        <div className="marketerz-header">
+          <Link href="/" className="marketerz-brand" onClick={() => setIsOpen(false)}>
+            <div style={{
+              width: '32px', height: '32px', borderRadius: '8px', 
+              backgroundColor: '#ffffff', display: 'flex', 
+              alignItems: 'center', justifyContent: 'center', 
+              flexShrink: 0, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+            }}>
+              <span style={{ color: '#dc2626', fontWeight: 900, fontSize: '18px', lineHeight: 1 }}>N</span>
             </div>
-            <span className="font-black text-xl tracking-tight text-slate-900 dark:text-white">
-              News<span className="text-rose-600">Portal</span>
+            <span className="marketerz-brand-text" style={{ color: '#ffffff' }}>
+              NewsPortal
             </span>
           </Link>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Link href="/search" className="marketerz-icon-btn" onClick={() => setIsOpen(false)} aria-label="Search">
+              <Search size={20} />
+            </Link>
+            <button className="marketerz-icon-btn mobile-close" onClick={toggleSidebar} aria-label="Close sidebar">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Theme Toggle Pill */}
+        <div className="marketerz-toggle-pill">
           <button 
-            className="lg:hidden p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-800 rounded-xl transition-all"
-            onClick={toggleSidebar}
-            aria-label="Close menu"
+            className={`marketerz-toggle-btn ${!isDark ? 'active' : ''}`}
+            onClick={() => setTheme('light')}
           >
-            <X size={20} strokeWidth={2} />
+            LIGHT
+          </button>
+          <button 
+            className={`marketerz-toggle-btn ${isDark ? 'active' : ''}`}
+            onClick={() => setTheme('dark')}
+          >
+            DARK
           </button>
         </div>
 
-        {/* Navigation Links */}
-        <div className="flex-1 overflow-y-auto py-6 px-4 space-y-8 custom-scrollbar">
-          
-          <div>
-            <h3 className="px-3 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">
-              Menu
-            </h3>
-            <nav className="space-y-1">
-              <Link 
-                href="/" 
-                onClick={() => setIsOpen(false)}
-                className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  pathname === '/' 
-                    ? 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400' 
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800/50'
-                }`}
-              >
-                <Home size={18} strokeWidth={pathname === '/' ? 2.5 : 2} className={pathname === '/' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'} />
-                <span>Home</span>
+        <div className="marketerz-scrollable">
+          {/* Main Menu */}
+          <nav className="marketerz-nav">
+            <Link 
+              href="/" 
+              onClick={() => setIsOpen(false)}
+              className={`marketerz-nav-item ${pathname === '/' ? 'active' : ''}`}
+            >
+              <Home className="marketerz-nav-icon" size={20} />
+              <span className="marketerz-nav-label">Dashboard</span>
+            </Link>
+
+            {categories.map((cat) => {
+              const isActive = pathname === `/category/${cat.slug}`;
+              return (
+                <Link
+                  key={cat._id}
+                  href={`/category/${cat.slug}`}
+                  onClick={() => setIsOpen(false)}
+                  className={`marketerz-nav-item ${isActive ? 'active' : ''}`}
+                >
+                  <div className="marketerz-nav-icon">
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: '20px', height: '20px', borderRadius: '4px',
+                      border: '1.5px solid currentColor'
+                    }}>
+                      <span style={{ fontSize: '10px', fontWeight: 'bold' }}>{cat.name.charAt(0).toUpperCase()}</span>
+                    </div>
+                  </div>
+                  <span className="marketerz-nav-label">{cat.name}</span>
+                </Link>
+              );
+            })}
+          </nav>
+
+          {/* Account Section */}
+          <div className="marketerz-section">
+            <h4 className="marketerz-section-title">ACCOUNT</h4>
+            <nav className="marketerz-nav">
+              <Link href="/saved" className={`marketerz-nav-item ${pathname === '/saved' ? 'active' : ''}`} onClick={() => setIsOpen(false)}>
+                <Bookmark className="marketerz-nav-icon" size={20} />
+                <span className="marketerz-nav-label">Saved Articles</span>
+                {isLoaded && bookmarks.length > 0 && (
+                  <span className="marketerz-badge yellow">{bookmarks.length}</span>
+                )}
               </Link>
-              <a 
-                href="/user"
-                className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800/50 transition-all duration-200"
+              {user && (
+                <Link href="/history" className={`marketerz-nav-item ${pathname === '/history' ? 'active' : ''}`} onClick={() => setIsOpen(false)}>
+                  <Clock className="marketerz-nav-icon" size={20} />
+                  <span className="marketerz-nav-label">Reading History</span>
+                </Link>
+              )}
+            </nav>
+          </div>
+        </div>
+
+        {/* User Profile Footer */}
+        <div className="marketerz-footer">
+          {user ? (
+            <Link href="/history" className="marketerz-user-pill" style={{ textDecoration: 'none', color: 'inherit' }} onClick={() => setIsOpen(false)}>
+              <div className="avatar-fallback">{user.name.charAt(0).toUpperCase()}</div>
+              <div className="marketerz-user-info" style={{ flexGrow: 1, minWidth: 0 }}>
+                <span className="user-name" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</span>
+                <span className="user-email" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</span>
+              </div>
+              {user.readingStreak > 0 && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '3px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#f59e0b',
+                  padding: '2px 6px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold',
+                  marginRight: '8px', flexShrink: 0
+                }} title={`${user.readingStreak} day reading streak`}>
+                  <Flame size={12} fill="#f59e0b" style={{ color: '#f59e0b' }} />
+                  <span>{user.readingStreak}</span>
+                </div>
+              )}
+              <button 
+                className="marketerz-more-btn" 
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); readerLogout(); }} 
+                aria-label="Sign Out"
+                title="Sign Out"
+                style={{ flexShrink: 0 }}
               >
-                <Settings size={18} strokeWidth={2} className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 group-hover:rotate-45 transition-all duration-300" />
-                <span>User Panel</span>
-              </a>
-            </nav>
-          </div>
-
-          <div>
-            <h3 className="px-3 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Layers size={14} strokeWidth={2} />
-              Categories
-            </h3>
-            <nav className="space-y-1">
-              {categories.map((cat) => {
-                const isActive = pathname === `/category/${cat.slug}`;
-                return (
-                  <Link
-                    key={cat._id}
-                    href={`/category/${cat.slug}`}
-                    onClick={() => setIsOpen(false)}
-                    className={`group flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                      isActive
-                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/50'
-                    }`}
-                  >
-                    <span>{cat.name}</span>
-                    {isActive && (
-                      <div className="w-1.5 h-1.5 rounded-full bg-slate-900 dark:bg-white" />
-                    )}
-                  </Link>
-                );
-              })}
-            </nav>
-          </div>
+                <LogIn size={18} style={{ transform: 'rotate(180deg)' }} />
+              </button>
+            </Link>
+          ) : isLoggedIn ? (
+            <a href="/user" className="marketerz-user-pill" style={{ textDecoration: 'none' }}>
+              <div className="avatar-fallback">A</div>
+              <div className="marketerz-user-info">
+                <span className="user-name">Admin Portal</span>
+                <span className="user-email">Manage Portal</span>
+              </div>
+              <button className="marketerz-more-btn" aria-label="Settings">
+                <Settings size={18} />
+              </button>
+            </a>
+          ) : (
+            <div className="marketerz-user-pill" style={{ cursor: 'pointer' }} onClick={() => openAuthModal()}>
+              <div className="avatar-fallback" style={{ background: 'transparent', border: '1px solid currentColor', color: 'inherit' }}>
+                <LogIn size={16} />
+              </div>
+              <div className="marketerz-user-info">
+                <span className="user-name">Sign In</span>
+                <span className="user-email">Save and react to stories</span>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Footer Area */}
-        <div className="p-5 border-t border-slate-100 dark:border-slate-800 shrink-0">
-          <div className="flex flex-col gap-1">
-            <p className="text-xs font-bold text-slate-900 dark:text-slate-200">
-              NewsPortal
-            </p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              © {new Date().getFullYear()} All rights reserved.
-            </p>
-          </div>
-        </div>
       </aside>
     </>
   );

@@ -13,6 +13,7 @@ import rateLimitRoutes from './src/routes/rateLimits.js';
 import notificationRoutes from './src/routes/notifications.js';
 import reportRoutes from './src/routes/reports.js';
 import publicRoutes from './src/routes/public.js';
+import aiRoutes from './src/routes/ai.js';
 import { globalApiLimiter } from './src/middleware/rateLimiter.js';
 
 const app = express();
@@ -56,6 +57,7 @@ app.use('/api/notifications',     notificationRoutes);
 app.use('/api/admin/audit-logs',  auditLogRoutes);
 app.use('/api/admin/rate-limits', rateLimitRoutes);
 app.use('/api/admin/reports',     reportRoutes);
+app.use('/api/admin/ai',          aiRoutes);
 
 // Public routes — no authentication required
 app.use('/api/public', publicRoutes);

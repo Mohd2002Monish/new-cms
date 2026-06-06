@@ -238,7 +238,11 @@ export const refreshAccessToken = async (req, res, next) => {
             name: user.name,
             email: user.email,
             role: user.role,
-            status: user.status
+            status: user.status,
+            readingStreak: user.readingStreak || 0,
+            lastReadDate: user.lastReadDate || null,
+            trackingEnabled: user.trackingEnabled !== false,
+            bookmarks: user.bookmarks || []
           }
         }
       });

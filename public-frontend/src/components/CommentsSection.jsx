@@ -3,14 +3,15 @@
 import { useState, useEffect } from 'react';
 import { publicApi } from '@/lib/api';
 import { timeAgo } from '@/lib/utils';
+import { useAuth } from '@/context/AuthContext';
 
 export default function CommentsSection({ articleSlug }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [authorName, setAuthorName] = useState('');
   const [body, setBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const { user, openAuthModal } = useAuth();
 
   useEffect(() => {
     const fetchComments = async () => {
@@ -28,16 +29,18 @@ export default function CommentsSection({ articleSlug }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!authorName.trim() || !body.trim()) return;
+    if (!user || !body.trim()) return;
 
     setSubmitting(true);
     setError(null);
 
     try {
-      const res = await publicApi.addComment(articleSlug, { authorName, body });
+      const res = await publicApi.addComment(articleSlug, { 
+        authorName: user.name, 
+        body 
+      });
       if (res?.success) {
         setComments([res.data, ...comments]);
-        setAuthorName('');
         setBody('');
       } else {
         setError(res?.message || 'Failed to post comment');
@@ -54,38 +57,59 @@ export default function CommentsSection({ articleSlug }) {
     <div className="comments-section" id="comments">
       <h3 className="comments-title">Comments ({comments.length})</h3>
 
-      <form onSubmit={handleSubmit} className="comments-form">
-        {error && <div className="comments-error" role="alert">{error}</div>}
-        <div className="form-group">
-          <label htmlFor="authorName" className="sr-only">Name</label>
-          <input
-            id="authorName"
-            type="text"
-            placeholder="Your Name"
-            value={authorName}
-            onChange={(e) => setAuthorName(e.target.value)}
-            required
-            className="comment-input"
-            disabled={submitting}
-          />
+      {!user ? (
+        <div style={{
+          padding: '24px',
+          textAlign: 'center',
+          backgroundColor: 'var(--color-bg-alt, #f8fafc)',
+          borderRadius: '12px',
+          border: '1px solid var(--color-border, #e2e8f0)',
+          marginBottom: '24px'
+        }}>
+          <p style={{ color: 'var(--color-text-secondary, #64748b)', fontSize: '14px', marginBottom: '12px' }}>
+            Please sign in to join the conversation.
+          </p>
+          <button 
+            type="button" 
+            onClick={() => openAuthModal()}
+            style={{
+              padding: '8px 16px',
+              fontSize: '13px',
+              fontWeight: 600,
+              backgroundColor: '#C0392B',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            Sign In
+          </button>
         </div>
-        <div className="form-group">
-          <label htmlFor="body" className="sr-only">Comment</label>
-          <textarea
-            id="body"
-            placeholder="Share your thoughts..."
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            required
-            rows="3"
-            className="comment-textarea"
-            disabled={submitting}
-          />
-        </div>
-        <button type="submit" disabled={submitting} className="btn btn-primary comment-submit">
-          {submitting ? 'Posting...' : 'Post Comment'}
-        </button>
-      </form>
+      ) : (
+        <form onSubmit={handleSubmit} className="comments-form">
+          {error && <div className="comments-error" role="alert">{error}</div>}
+          <div style={{ fontSize: '13px', color: 'var(--color-text-secondary, #64748b)', marginBottom: '8px' }}>
+            Posting as <strong style={{ color: '#C0392B' }}>{user.name}</strong>
+          </div>
+          <div className="form-group">
+            <label htmlFor="body" className="sr-only">Comment</label>
+            <textarea
+              id="body"
+              placeholder="Share your thoughts..."
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              required
+              rows="3"
+              className="comment-textarea"
+              disabled={submitting}
+            />
+          </div>
+          <button type="submit" disabled={submitting} className="btn btn-primary comment-submit">
+            {submitting ? 'Posting...' : 'Post Comment'}
+          </button>
+        </form>
+      )}
 
       <div className="comments-list">
         {loading ? (
