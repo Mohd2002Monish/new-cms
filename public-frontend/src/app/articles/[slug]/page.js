@@ -139,15 +139,80 @@ export default async function ArticlePage({ params }) {
       <ViewTracker slug={slug} categorySlug={article.category?.slug} />
 
       <div className="article-page">
-        <div className="container">
+        <div className="container container--article">
           {/* ── Breadcrumb ─────────────────────────────────────────────────── */}
           <Breadcrumb items={breadcrumbItems} />
+
+          {/* ── Editorial Header ───────────────────────────────────────────── */}
+          <header className="article-editorial-header">
+            {/* Category / Breaking Badge */}
+            <div className="article-badges-row">
+              {article.category?.slug && (
+                <Link href={`/category/${article.category.slug}`} className="badge badge-brand">
+                  {article.category.name}
+                </Link>
+              )}
+              {article.isBreaking && (
+                <span className="badge badge-breaking" aria-label="Breaking news">
+                  <Circle size={10} fill="currentColor" className="breaking-icon" /> Breaking News
+                </span>
+              )}
+            </div>
+
+            {/* H1 — one per page (SEO requirement) */}
+            <h1 className="article-title">{article.title}</h1>
+
+            {/* Sub-heading (Excerpt) */}
+            {article.excerpt && (
+              <p className="article-subtitle">{article.excerpt}</p>
+            )}
+
+            {/* Meta row */}
+            <div className="article-meta-row" role="contentinfo">
+              {article.author?.name && (
+                <>
+                  <span>By</span>
+                  <span className="article-meta-author">{article.author.name}</span>
+                  <span className="article-meta-sep" aria-hidden="true">·</span>
+                </>
+              )}
+
+              {article.publishedAt && (
+                <>
+                  <time dateTime={article.publishedAt}>
+                    Published: {formatDate(article.publishedAt)}
+                  </time>
+                </>
+              )}
+
+              {article.updatedAt && article.updatedAt !== article.publishedAt && (
+                <>
+                  <span className="article-meta-sep" aria-hidden="true">·</span>
+                  <time dateTime={article.updatedAt}>
+                    Updated: {formatDate(article.updatedAt)}
+                  </time>
+                </>
+              )}
+
+              {article.readingTimeMinutes && (
+                <>
+                  <span className="article-meta-sep" aria-hidden="true">·</span>
+                  <span>{article.readingTimeMinutes} min read</span>
+                </>
+              )}
+
+              <span className="article-meta-sep" aria-hidden="true">·</span>
+              <BookmarkButton slug={article.slug} showLabel={true} />
+              <span className="article-meta-sep" aria-hidden="true">·</span>
+              <FontSizeAdjuster />
+            </div>
+          </header>
         </div>
 
-        {/* ── Hero Image (full-width, outside container) ───────────────────── */}
+        {/* ── Featured Image (clean, no text overlays) ───────────────────── */}
         {heroUrl && (
-          <div className="container">
-            <figure className="article-hero-wrap" style={{ position: 'relative' }}>
+          <div className="container container--article">
+            <figure className="article-hero-wrap">
               <Image
                 src={heroUrl}
                 alt={article.featuredImage?.alt || article.title}
@@ -155,92 +220,8 @@ export default async function ArticlePage({ params }) {
                 priority
                 fetchPriority="high"
                 sizes="(max-width: 1200px) 100vw, 1200px"
-                style={{ objectFit: 'cover', zIndex: 1 }}
+                className="article-hero-img"
               />
-
-              <div 
-                className="article-hero-overlay"
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background: 'linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.65) 55%, rgba(15, 23, 42, 0.15) 100%)',
-                  display: 'flex',
-                  alignItems: 'flex-end',
-                  padding: '2.5rem',
-                  zIndex: 10,
-                  color: '#ffffff'
-                }}
-              >
-                <div className="article-hero-content" style={{ width: '100%', maxWidth: '860px' }}>
-                  {/* Breaking badge */}
-                  {article.isBreaking && (
-                    <span
-                      className="badge badge-breaking"
-                      aria-label="Breaking news"
-                      style={{ marginBottom: '1rem', display: 'inline-flex', alignItems: 'center' }}
-                    >
-                      <Circle size={10} fill="currentColor" style={{ marginRight: '4px' }} /> Breaking News
-                    </span>
-                  )}
-
-                  {/* H1 — one per page (SEO requirement) */}
-                  <h1 className="article-title hero-title" style={{ color: '#ffffff', textShadow: '0 2px 4px rgba(0,0,0,0.5)', marginBottom: '0.75rem' }}>{article.title}</h1>
-
-                  {/* Sub-heading (Excerpt) */}
-                  {article.excerpt && (
-                    <p className="article-subtitle hero-subtitle" style={{ color: 'rgba(255, 255, 255, 0.95)', textShadow: '0 1px 3px rgba(0,0,0,0.4)', fontWeight: '400', fontSize: '1.2rem', lineHeight: '1.6', marginBottom: '1.5rem' }}>{article.excerpt}</p>
-                  )}
-
-                  {/* Meta row */}
-                  <div className="article-meta-row hero-meta-row" role="contentinfo" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.2)', borderBottom: '1px solid rgba(255,255,255,0.2)', padding: '0.75rem 0', margin: 0, color: 'rgba(255,255,255,0.8)' }}>
-                    {article.author?.name && (
-                      <>
-                        <span>By</span>
-                        <span className="article-meta-author" style={{ color: '#ffffff', fontWeight: 600 }}>{article.author.name}</span>
-                        <span className="article-meta-sep" aria-hidden="true" style={{ color: 'rgba(255,255,255,0.4)' }}>·</span>
-                      </>
-                    )}
-
-                    {article.category?.slug && (
-                      <>
-                        <Link href={`/category/${article.category.slug}`} className="badge badge-brand" style={{ backgroundColor: '#C0392B', color: '#ffffff', border: 'none' }}>
-                          {article.category.name}
-                        </Link>
-                        <span className="article-meta-sep" aria-hidden="true" style={{ color: 'rgba(255,255,255,0.4)' }}>·</span>
-                      </>
-                    )}
-
-                    {article.publishedAt && (
-                      <>
-                        <time dateTime={article.publishedAt} style={{ color: 'rgba(255,255,255,0.9)' }}>
-                          Published: {formatDate(article.publishedAt)}
-                        </time>
-                      </>
-                    )}
-
-                    {article.updatedAt && article.updatedAt !== article.publishedAt && (
-                      <>
-                        <span className="article-meta-sep" aria-hidden="true" style={{ color: 'rgba(255,255,255,0.4)' }}>·</span>
-                        <time dateTime={article.updatedAt} style={{ color: 'rgba(255,255,255,0.9)' }}>
-                          Updated: {formatDate(article.updatedAt)}
-                        </time>
-                      </>
-                    )}
-
-                    {article.readingTimeMinutes && (
-                      <>
-                        <span className="article-meta-sep" aria-hidden="true" style={{ color: 'rgba(255,255,255,0.4)' }}>·</span>
-                        <span style={{ color: 'rgba(255,255,255,0.9)' }}>{article.readingTimeMinutes} min read</span>
-                      </>
-                    )}
-
-                    <span className="article-meta-sep" aria-hidden="true" style={{ color: 'rgba(255,255,255,0.4)' }}>·</span>
-                    <BookmarkButton slug={article.slug} showLabel={true} style={{ color: '#ffffff' }} />
-                    <span className="article-meta-sep" aria-hidden="true" style={{ color: 'rgba(255,255,255,0.4)' }}>·</span>
-                    <FontSizeAdjuster />
-                  </div>
-                </div>
-              </div>
 
               {article.featuredImage?.alt && (
                 <figcaption className="article-hero-caption sr-only">
@@ -252,11 +233,11 @@ export default async function ArticlePage({ params }) {
         )}
 
         {/* Top Share Buttons */}
-        <div className="container" style={{ marginBlock: '1.5rem' }}>
+        <div className="container container--article" style={{ marginBlock: '1.5rem' }}>
           <ShareButtons title={article.title} text={article.excerpt} />
         </div>
 
-        <div id="article-content" className="article-body--md container">
+        <div id="article-content" className="article-body--md container container--article">
           <ArticleContentWrapper initialArticle={article} />
 
           {/* ── Author bio card ──────────────────────────────────────────────── */}

@@ -7,12 +7,18 @@ export const getRateLimits = async (req, res, next) => {
   try {
     const rateLimitsCollection = mongoose.connection.db.collection('rate_limits');
     
-    // Default rate-limit-mongo uses 'key' for IP/identifier, 'hits' for count, and 'expireAt' or 'resetTime'
-    const limits = await rateLimitsCollection.find({}).sort({ expireAt: 1 }).toArray();
+    // rate-limit-mongo uses '_id' for IP/identifier, 'counter' for count, and 'expirationDate' for expiration
+    const limits = await rateLimitsCollection.find({}).sort({ expirationDate: 1 }).toArray();
+    
+    const mappedLimits = limits.map(doc => ({
+      key: doc._id,
+      hits: doc.counter,
+      expireAt: doc.expirationDate,
+    }));
     
     res.status(200).json({
       success: true,
-      data: limits
+      data: mappedLimits
     });
   } catch (error) {
     next(error);
@@ -27,7 +33,7 @@ export const deleteRateLimit = async (req, res, next) => {
     const { id } = req.params;
     const rateLimitsCollection = mongoose.connection.db.collection('rate_limits');
     
-    await rateLimitsCollection.deleteOne({ key: id });
+    await rateLimitsCollection.deleteOne({ _id: id });
     
     res.status(200).json({
       success: true,

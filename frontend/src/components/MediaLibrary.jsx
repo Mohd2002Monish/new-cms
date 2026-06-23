@@ -13,6 +13,7 @@ export default function MediaLibrary({ onSelect, pickerMode = false }) {
   // Drag state
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef(null);
+  const [pendingFile, setPendingFile] = useState(null);
 
   const fetchAssets = async (pageNum = 1) => {
     setLoading(true);
@@ -86,12 +87,20 @@ export default function MediaLibrary({ onSelect, pickerMode = false }) {
     e.preventDefault();
     setIsDragOver(false);
     const file = e.dataTransfer.files?.[0];
-    handleFileUpload(file);
+    if (file && file.type.startsWith('image/')) {
+      setPendingFile(file);
+    } else {
+      handleFileUpload(file);
+    }
   };
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
-    handleFileUpload(file);
+    if (file && file.type.startsWith('image/')) {
+      setPendingFile(file);
+    } else {
+      handleFileUpload(file);
+    }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -268,6 +277,420 @@ export default function MediaLibrary({ onSelect, pickerMode = false }) {
             </div>
           </div>
         )}
+      </div>
+
+      {pendingFile && (
+        <ImageEditorModal
+          file={pendingFile}
+          onClose={() => setPendingFile(null)}
+          onSave={(croppedFile) => {
+            setPendingFile(null);
+            handleFileUpload(croppedFile);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Image Editor Modal with Zoom/Pan & Simulated Previews ───────────────────
+
+function ImageEditorModal({ file, onClose, onSave }) {
+  const [imgSrc, setImgSrc] = useState('');
+  const [aspectRatio, setAspectRatio] = useState('16:9'); // '16:9', '1:1', 'original'
+  const [zoom, setZoom] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [imgDimensions, setImgDimensions] = useState({ width: 0, height: 0 });
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
+
+  const imgRef = useRef(null);
+  const viewportRef = useRef(null);
+
+  useEffect(() => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setImgSrc(reader.result);
+    reader.readAsDataURL(file);
+  }, [file]);
+
+  const updateViewportSize = () => {
+    if (viewportRef.current) {
+      setViewport({
+        width: viewportRef.current.clientWidth,
+        height: viewportRef.current.clientHeight,
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (imgSrc) {
+      const timer = setTimeout(() => {
+        updateViewportSize();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [aspectRatio, imgSrc]);
+
+  const onImageLoad = (e) => {
+    const { naturalWidth, naturalHeight } = e.target;
+    setImgDimensions({ width: naturalWidth, height: naturalHeight });
+    setZoom(1);
+    setPosition({ x: 0, y: 0 });
+    // Run an immediate measure
+    if (viewportRef.current) {
+      setViewport({
+        width: viewportRef.current.clientWidth,
+        height: viewportRef.current.clientHeight,
+      });
+    }
+  };
+
+  const clampPos = (x, y, zoomVal) => {
+    if (!viewport.width || !imgDimensions.width) return { x: 0, y: 0 };
+    const initScaleVal = Math.max(viewport.width / imgDimensions.width, viewport.height / imgDimensions.height);
+    const scaleVal = initScaleVal * zoomVal;
+    const curW = imgDimensions.width * scaleVal;
+    const curH = imgDimensions.height * scaleVal;
+
+    const minX = viewport.width - curW;
+    const minY = viewport.height - curH;
+
+    return {
+      x: Math.min(0, Math.max(minX, x)),
+      y: Math.min(0, Math.max(minY, y)),
+    };
+  };
+
+  const handleZoomChange = (newZoom) => {
+    setZoom(newZoom);
+    setPosition(prev => clampPos(prev.x, prev.y, newZoom));
+  };
+
+  const initScale = imgDimensions.width && imgDimensions.height && viewport.width
+    ? Math.max(viewport.width / imgDimensions.width, viewport.height / imgDimensions.height)
+    : 1;
+  const currentScale = initScale * zoom;
+  const currentWidth = imgDimensions.width * currentScale;
+  const currentHeight = imgDimensions.height * currentScale;
+
+  const handleMouseDown = (e) => {
+    if (aspectRatio === 'original') return;
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging) return;
+    const newX = e.clientX - dragStart.x;
+    const newY = e.clientY - dragStart.y;
+    setPosition(clampPos(newX, newY, zoom));
+  };
+
+  const handleTouchStart = (e) => {
+    if (aspectRatio === 'original') return;
+    setIsDragging(true);
+    const touch = e.touches[0];
+    setDragStart({ x: touch.clientX - position.x, y: touch.clientY - position.y });
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isDragging) return;
+    const touch = e.touches[0];
+    const newX = touch.clientX - dragStart.x;
+    const newY = touch.clientY - dragStart.y;
+    setPosition(clampPos(newX, newY, zoom));
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const getPreviewImageStyle = (cardWidth, cardHeight) => {
+    if (aspectRatio === 'original') {
+      return {
+        subContainerStyle: {
+          width: '100%',
+          height: '100%',
+          position: 'relative',
+        },
+        imageStyle: {
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+        }
+      };
+    }
+
+    const cropW = viewport.width || 1;
+    const cropH = viewport.height || 1;
+
+    const scaleFactor = Math.max(cardWidth / cropW, cardHeight / cropH);
+
+    const subW = cropW * scaleFactor;
+    const subH = cropH * scaleFactor;
+
+    const subL = (cardWidth - subW) / 2;
+    const subT = (cardHeight - subH) / 2;
+
+    return {
+      subContainerStyle: {
+        position: 'absolute',
+        width: `${subW}px`,
+        height: `${subH}px`,
+        left: `${subL}px`,
+        top: `${subT}px`,
+        overflow: 'hidden',
+      },
+      imageStyle: {
+        position: 'absolute',
+        width: `${currentWidth * scaleFactor}px`,
+        height: `${currentHeight * scaleFactor}px`,
+        left: `${position.x * scaleFactor}px`,
+        top: `${position.y * scaleFactor}px`,
+        maxWidth: 'none',
+      }
+    };
+  };
+
+  const handleCrop = () => {
+    if (aspectRatio === 'original') {
+      onSave(file);
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    const canvasWidth = aspectRatio === '16:9' ? 1280 : 600;
+    const canvasHeight = aspectRatio === '16:9' ? 720 : 600;
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const canvasScale = canvasWidth / viewport.width;
+
+    const drawWidth = currentWidth * canvasScale;
+    const drawHeight = currentHeight * canvasScale;
+    const drawX = position.x * canvasScale;
+    const drawY = position.y * canvasScale;
+
+    ctx.drawImage(imgRef.current, drawX, drawY, drawWidth, drawHeight);
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const croppedFile = new File([blob], file.name, {
+        type: file.type,
+        lastModified: Date.now(),
+      });
+      onSave(croppedFile);
+    }, file.type);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl flex flex-col overflow-hidden max-h-[95vh] border border-slate-100 animate-fade-in">
+        {/* Header */}
+        <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50/50">
+          <div>
+            <h3 className="font-black text-slate-800 text-lg flex items-center gap-2">✂️ Image Crop & Editor</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Optimize size and focal region before saving to library</p>
+          </div>
+          <button 
+            onClick={onClose} 
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white text-slate-500 hover:bg-slate-200 transition-colors shadow-sm text-lg font-bold"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6 flex flex-col md:flex-row gap-8 min-h-0">
+          {/* Left Column: Crop viewport */}
+          <div className="flex-1 flex flex-col gap-4">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Crop Viewport</span>
+
+            <div 
+              ref={viewportRef}
+              className="relative bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden select-none cursor-move flex items-center justify-center"
+              style={{
+                width: '100%',
+                aspectRatio: aspectRatio === '16:9' ? '16/9' : aspectRatio === '1:1' ? '1/1' : '4/3', // backup ratio
+                maxHeight: '360px',
+                touchAction: 'none',
+              }}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleMouseUp}
+            >
+              {imgSrc && (
+                <img
+                  ref={imgRef}
+                  src={imgSrc}
+                  alt="Crop target"
+                  onLoad={onImageLoad}
+                  className="absolute pointer-events-none max-w-none"
+                  style={aspectRatio === 'original' ? {
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    position: 'static',
+                  } : {
+                    width: `${currentWidth}px`,
+                    height: `${currentHeight}px`,
+                    left: `${position.x}px`,
+                    top: `${position.y}px`,
+                  }}
+                />
+              )}
+
+              {aspectRatio !== 'original' && (
+                <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3 border border-white/20">
+                  <div className="border-r border-b border-white/20"></div>
+                  <div className="border-r border-b border-white/20"></div>
+                  <div className="border-b border-white/20"></div>
+                  <div className="border-r border-b border-white/20"></div>
+                  <div className="border-r border-b border-white/20"></div>
+                  <div className="border-b border-white/20"></div>
+                  <div className="border-r border-white/20"></div>
+                  <div className="border-r border-white/20"></div>
+                  <div></div>
+                </div>
+              )}
+            </div>
+
+            {/* Aspect Ratio Presets */}
+            <div className="space-y-2">
+              <span className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Select Aspect Ratio</span>
+              <div className="flex gap-2.5">
+                {[
+                  { id: '16:9', label: 'Landscape (16:9)', desc: 'For Featured post image' },
+                  { id: '1:1', label: 'Square (1:1)', desc: 'For sidebar thumbnails' },
+                  { id: 'original', label: 'Original', desc: 'No crop' }
+                ].map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => setAspectRatio(item.id)}
+                    className={`flex-1 p-3 rounded-xl border text-left transition-all ${aspectRatio === item.id ? 'border-theme-purple bg-theme-purple/5 ring-2 ring-theme-purple/10 font-bold' : 'border-slate-200 hover:bg-slate-50'}`}
+                  >
+                    <div className="text-xs text-slate-800">{item.label}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5 leading-normal">{item.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Zoom Slider */}
+            {aspectRatio !== 'original' && (
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Zoom</span>
+                  <span className="text-xs font-bold text-slate-700">{(zoom * 100).toFixed(0)}%</span>
+                </div>
+                <div className="flex items-center gap-3 bg-slate-50 px-4 py-3 rounded-xl border border-slate-100">
+                  <span className="text-xs text-slate-400 select-none">➖</span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="3"
+                    step="0.01"
+                    value={zoom}
+                    onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
+                    className="flex-1 accent-theme-purple cursor-pointer h-1.5 bg-slate-200 rounded-lg appearance-none"
+                  />
+                  <span className="text-xs text-slate-400 select-none">➕</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right Column: Previews */}
+          <div className="w-full md:w-80 flex flex-col gap-4">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Live Website Previews</span>
+
+            <div className="flex-1 flex flex-col gap-5 overflow-y-auto max-h-[460px] pr-1">
+              {/* Homepage Card Preview */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Home Page Grid (16:9)</span>
+                <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-sm flex flex-col w-full">
+                  <div className="relative aspect-video bg-slate-100 overflow-hidden w-full">
+                    {imgSrc ? (
+                      <div style={getPreviewImageStyle(320, 180).subContainerStyle}>
+                        <img
+                          src={imgSrc}
+                          alt="Homepage Preview"
+                          style={getPreviewImageStyle(320, 180).imageStyle}
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-full h-full bg-slate-100" />
+                    )}
+                    <span className="absolute top-2 left-2 bg-red-600 text-[8px] font-black text-white px-2 py-0.5 rounded-full uppercase tracking-wider">Breaking</span>
+                  </div>
+                  <div className="p-3.5 space-y-1.5">
+                    <span className="text-[9px] font-extrabold text-theme-purple uppercase tracking-wider">Politics</span>
+                    <h4 className="text-xs font-bold text-slate-800 line-clamp-2 leading-snug">Simulated Live Preview of Article Homepage Card</h4>
+                    <div className="flex items-center gap-1 text-[9px] text-slate-400">
+                      <span>Author Name</span>
+                      <span>·</span>
+                      <span>3 min read</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sidebar Thumbnail Preview */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Trending Sidebar Thumb (1:1)</span>
+                <div className="border border-slate-100 rounded-2xl p-3 bg-white shadow-sm flex items-center gap-3">
+                  <span className="text-base font-black text-red-600/30">1</span>
+                  <div className="relative w-12 h-12 rounded bg-slate-100 overflow-hidden shrink-0">
+                    {imgSrc && (
+                      <div style={getPreviewImageStyle(48, 48).subContainerStyle}>
+                        <img
+                          src={imgSrc}
+                          alt="Sidebar Preview"
+                          style={getPreviewImageStyle(48, 48).imageStyle}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-0.5">
+                    <p className="text-[11px] font-bold text-slate-800 truncate">Trending article sidebar thumb preview title</p>
+                    <p className="text-[9px] text-slate-400 font-medium">10,240 views</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+          <button 
+            onClick={onClose}
+            className="flex-1 py-2.5 bg-white border border-slate-200 text-slate-600 font-bold text-sm rounded-xl hover:bg-slate-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button 
+            onClick={() => onSave(file)}
+            className="py-2.5 px-4 bg-slate-100 border border-slate-200 text-slate-700 font-bold text-sm rounded-xl hover:bg-slate-200 transition-colors"
+          >
+            Upload Original
+          </button>
+          <button 
+            onClick={handleCrop}
+            className="flex-[2] py-2.5 bg-theme-purple hover:bg-purple-600 text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-purple-600/10"
+          >
+            Crop & Upload
+          </button>
+        </div>
       </div>
     </div>
   );
