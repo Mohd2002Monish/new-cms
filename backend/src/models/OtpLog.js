@@ -23,4 +23,7 @@ const otpLogSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Auth flows look up active OTPs by user
+otpLogSchema.index({ userId: 1, used: 1, expiresAt: 1 });
+
 export const OtpLog = mongoose.model('OtpLog', otpLogSchema);

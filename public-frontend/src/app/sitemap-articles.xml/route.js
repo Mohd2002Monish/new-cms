@@ -16,9 +16,10 @@ export async function GET() {
   }
 
   const urlItems = articles.map((article) => {
+    const lang = article.language || 'en';
     return `
   <url>
-    <loc>${siteUrl}/articles/${article.slug}</loc>
+    <loc>${siteUrl}/${lang}/articles/${encodeURIComponent(article.slug)}</loc>
     <lastmod>${new Date(article.updatedAt || article.publishedAt).toISOString()}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>

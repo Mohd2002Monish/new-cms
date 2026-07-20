@@ -6,7 +6,7 @@ import { publicApi } from '@/lib/api';
 import ArticleCard from '@/components/ArticleCard';
 import { SearchX } from 'lucide-react';
 
-export default function SearchResults() {
+export default function SearchResults({ lang = 'en' }) {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -24,10 +24,10 @@ export default function SearchResults() {
 
   // Fetch categories for the filter
   useEffect(() => {
-    publicApi.getCategories().then(res => {
+    publicApi.getCategories({ lang }).then(res => {
       if (res.data) setCategories(res.data);
     }).catch(console.error);
-  }, []);
+  }, [lang]);
 
   // Fetch search results
   useEffect(() => {
@@ -41,7 +41,8 @@ export default function SearchResults() {
           category,
           from,
           to,
-          page
+          page,
+          lang
         });
         if (isMounted && res.success) {
           setResults(res.data);
@@ -64,7 +65,7 @@ export default function SearchResults() {
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [query, category, from, to, page]);
+  }, [query, category, from, to, page, lang]);
 
   const updateParam = (key, value) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -76,7 +77,7 @@ export default function SearchResults() {
     // reset to page 1 on filter change
     if (key !== 'page') params.delete('page');
     
-    router.push(`/search?${params.toString()}`);
+    router.push(`/${lang}/search?${params.toString()}`);
   };
 
   if (!query) {
@@ -108,7 +109,7 @@ export default function SearchResults() {
           >
             <option value="">All Categories</option>
             {categories.map(c => (
-              <option key={c.slug} value={c.slug}>{c.name}</option>
+              <option key={c.slug} value={c.slug}>{c.localizedName || c.name}</option>
             ))}
           </select>
 

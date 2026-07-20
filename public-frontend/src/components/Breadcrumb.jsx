@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { jsonLdSafe } from '@/lib/utils';
 
 /**
  * Breadcrumb — renders a BreadcrumbList for both display and SEO JSON-LD.
@@ -25,7 +26,7 @@ export default function Breadcrumb({ items = [] }) {
       {/* JSON-LD for Google */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdSafe(jsonLd) }}
       />
 
       {/* Visual breadcrumb */}

@@ -13,14 +13,15 @@ import {
   addLiveUpdate,
 } from '../controllers/posts.controller.js';
 import { authenticate, checkActive } from '../middleware/authenticate.js';
-import { authorize, hasPermission } from '../middleware/authorize.js';
+import { authorize, hasPermission, requireStaff } from '../middleware/authorize.js';
 import { getRevisions, restoreRevision } from '../controllers/postRevisions.controller.js';
 import commentRoutes from './comments.js';
 
 const router = Router();
 
-// All routes require authentication
-router.use(authenticate, checkActive);
+// All routes require authentication and a staff account (admin/manager/editor) —
+// this is the internal editorial pipeline, not reachable by public reader accounts.
+router.use(authenticate, checkActive, requireStaff);
 
 // POST /api/posts/reorder-slider
 router.post('/reorder-slider', authorize('admin'), reorderSlider);

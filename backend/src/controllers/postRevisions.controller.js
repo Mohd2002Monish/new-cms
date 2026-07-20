@@ -8,13 +8,17 @@ export const getRevisions = async (req, res, next) => {
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
 
-    // Access control: editors can only view their own post revisions
+    // Access control: mirrors getPostById — editors only their own/co-authored
+    // posts, managers only posts assigned to them, admins unrestricted.
     if (req.user.role === 'editor') {
       const isOwner = post.author.toString() === req.user._id.toString();
       const isCoAuthor = post.coAuthors.some(id => id.toString() === req.user._id.toString());
       if (!isOwner && !isCoAuthor) {
         return res.status(403).json({ success: false, message: 'Access denied' });
       }
+    }
+    if (req.user.role === 'manager' && post.assignedManager?.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
     const revisions = await PostRevision.find({ postId: req.params.id })

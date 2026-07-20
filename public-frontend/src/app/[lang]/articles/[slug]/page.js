@@ -2,7 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { publicApi } from '@/lib/api';
-import { formatDate, buildImageUrl } from '@/lib/utils';
+import { formatDate, buildImageUrl, jsonLdSafe } from '@/lib/utils';
 import Breadcrumb from '@/components/Breadcrumb';
 import ReadingProgressBar from '@/components/ReadingProgressBar';
 import ViewTracker from '@/components/ViewTracker';
@@ -11,8 +11,21 @@ import FontSizeAdjuster from '@/components/FontSizeAdjuster';
 import BookmarkButton from '@/components/BookmarkButton';
 import ShareButtons from '@/components/ShareButtons';
 import ArticleContentWrapper from '@/components/ArticleContentWrapper';
+import { getDictionary, hasLocale, LANGUAGE_LABELS } from '@/i18n/dictionaries';
 
 export const revalidate = 60; // Enable ISR caching (60 seconds)
+
+// hreflang alternates from the article's linked translations (incl. itself)
+function buildLanguageAlternates(article, siteUrl) {
+  const languages = {
+    [article.language || 'en']: `${siteUrl}/${article.language || 'en'}/articles/${article.slug}`,
+  };
+  for (const t of article.translations || []) {
+    languages[t.language] = `${siteUrl}/${t.language}/articles/${t.slug}`;
+  }
+  if (languages.en) languages['x-default'] = languages.en;
+  return languages;
+}
 
 // ─── Server-side data fetching ────────────────────────────────────────────────
 
@@ -29,18 +42,21 @@ async function getArticle(slug) {
 // ─── Dynamic metadata (SSR, picked up by Google News) ─────────────────────────
 
 export async function generateMetadata({ params }) {
-  const { slug } = await params;
+  const { lang, slug } = await params;
   const article = await getArticle(slug);
   if (!article) return { title: 'Article Not Found' };
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-  const canonicalUrl = article.seo?.canonicalUrl || `${siteUrl}/articles/${slug}`;
+  const canonicalUrl = article.seo?.canonicalUrl || `${siteUrl}/${lang}/articles/${slug}`;
   const ogImage = article.seo?.ogImage || article.featuredImage?.url || '';
 
   return {
     title: article.seo?.metaTitle || article.title,
     description: article.seo?.metaDescription || article.excerpt,
-    alternates: { canonical: canonicalUrl },
+    alternates: {
+      canonical: canonicalUrl,
+      languages: buildLanguageAlternates(article, siteUrl),
+    },
     robots: article.seo?.noIndex ? 'noindex,nofollow' : 'index,follow',
     openGraph: {
       type: 'article',
@@ -65,7 +81,9 @@ export async function generateMetadata({ params }) {
 // ─── Page Component ───────────────────────────────────────────────────────────
 
 export default async function ArticlePage({ params }) {
-  const { slug } = await params;
+  const { lang, slug } = await params;
+  if (!hasLocale(lang)) notFound();
+  const dict = getDictionary(lang);
   const article = await getArticle(slug);
 
   if (!article) notFound();
@@ -95,16 +113,20 @@ export default async function ArticlePage({ params }) {
     },
     mainEntityOfPage: {
       '@type': 'WebPage',
-      '@id': `${siteUrl}/articles/${slug}`,
+      '@id': `${siteUrl}/${lang}/articles/${slug}`,
     },
+    inLanguage: article.language || 'en',
   };
 
   const heroUrl = buildImageUrl(article.featuredImage?.url, { width: 1200 });
 
+  const categoryLabel =
+    (lang !== 'en' && article.category?.nameTranslations?.[lang]) || article.category?.name;
+
   const breadcrumbItems = [
-    { label: 'Home', href: '/' },
+    { label: dict.home, href: `/${lang}` },
     ...(article.category?.slug
-      ? [{ label: article.category.name, href: `/category/${article.category.slug}` }]
+      ? [{ label: categoryLabel, href: `/${lang}/category/${article.category.slug}` }]
       : []),
     { label: article.title },
   ];
@@ -114,12 +136,12 @@ export default async function ArticlePage({ params }) {
       {/* JSON-LD — must be server-rendered for Google News */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdSafe(jsonLd) }}
       />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
+          __html: jsonLdSafe({
             '@context': 'https://schema.org',
             '@type': 'BreadcrumbList',
             itemListElement: breadcrumbItems.map((item, index) => ({
@@ -148,16 +170,32 @@ export default async function ArticlePage({ params }) {
             {/* Category / Breaking Badge */}
             <div className="article-badges-row">
               {article.category?.slug && (
-                <Link href={`/category/${article.category.slug}`} className="badge badge-brand">
-                  {article.category.name}
+                <Link href={`/${lang}/category/${article.category.slug}`} className="badge badge-brand">
+                  {categoryLabel}
                 </Link>
               )}
               {article.isBreaking && (
                 <span className="badge badge-breaking" aria-label="Breaking news">
-                  <Circle size={10} fill="currentColor" className="breaking-icon" /> Breaking News
+                  <Circle size={10} fill="currentColor" className="breaking-icon" /> {dict.breaking}
                 </span>
               )}
             </div>
+
+            {/* Linked translations of this story */}
+            {(article.translations || []).length > 0 && (
+              <div className="article-badges-row" style={{ marginTop: '0.5rem' }}>
+                {article.translations.map((t) => (
+                  <Link
+                    key={t.language}
+                    href={`/${t.language}/articles/${t.slug}`}
+                    className="badge"
+                    style={{ background: 'var(--color-bg-alt)' }}
+                  >
+                    {LANGUAGE_LABELS[t.language] || t.language} ↗
+                  </Link>
+                ))}
+              </div>
+            )}
 
             {/* H1 — one per page (SEO requirement) */}
             <h1 className="article-title">{article.title}</h1>
@@ -171,7 +209,7 @@ export default async function ArticlePage({ params }) {
             <div className="article-meta-row" role="contentinfo">
               {article.author?.name && (
                 <>
-                  <span>By</span>
+                  <span>{dict.by}</span>
                   <span className="article-meta-author">{article.author.name}</span>
                   <span className="article-meta-sep" aria-hidden="true">·</span>
                 </>
@@ -180,7 +218,7 @@ export default async function ArticlePage({ params }) {
               {article.publishedAt && (
                 <>
                   <time dateTime={article.publishedAt}>
-                    Published: {formatDate(article.publishedAt)}
+                    {dict.published}: {formatDate(article.publishedAt, undefined, lang)}
                   </time>
                 </>
               )}
@@ -189,7 +227,7 @@ export default async function ArticlePage({ params }) {
                 <>
                   <span className="article-meta-sep" aria-hidden="true">·</span>
                   <time dateTime={article.updatedAt}>
-                    Updated: {formatDate(article.updatedAt)}
+                    {dict.updated}: {formatDate(article.updatedAt, undefined, lang)}
                   </time>
                 </>
               )}
@@ -197,7 +235,7 @@ export default async function ArticlePage({ params }) {
               {article.readingTimeMinutes && (
                 <>
                   <span className="article-meta-sep" aria-hidden="true">·</span>
-                  <span>{article.readingTimeMinutes} min read</span>
+                  <span>{article.readingTimeMinutes} {dict.minRead}</span>
                 </>
               )}
 

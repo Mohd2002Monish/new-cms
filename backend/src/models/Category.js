@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { slugify } from '../utils/slugify.js';
 
 const categorySchema = new mongoose.Schema({
   name: {
@@ -6,6 +7,12 @@ const categorySchema = new mongoose.Schema({
     required: [true, 'Category name is required'],
     trim: true,
     unique: true,
+  },
+  // Localized display names; `name` stays the canonical (English) label and is
+  // used as the fallback when a translation is missing.
+  nameTranslations: {
+    hi: { type: String, trim: true, default: '' },
+    gu: { type: String, trim: true, default: '' },
   },
   slug: {
     type: String,
@@ -43,15 +50,11 @@ const categorySchema = new mongoose.Schema({
   timestamps: true,
 });
 
-// Auto-generate slug from name before save
+// Auto-generate slug from name before save (Unicode-aware; a timestamp
+// fallback prevents duplicate empty slugs from ever colliding)
 categorySchema.pre('save', function (next) {
   if (this.isModified('name')) {
-    this.slug = this.name
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-');
+    this.slug = slugify(this.name) || `category-${Date.now()}`;
   }
   next();
 });

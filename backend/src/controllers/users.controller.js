@@ -133,14 +133,13 @@ export const createUser = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Email already registered' });
     }
     
-    // Manager authorization guard
-    if (req.user.role === 'manager') {
-      if (role !== 'editor') {
-        return res.status(403).json({
-          success: false,
-          message: 'Managers are only permitted to create Editor accounts.'
-        });
-      }
+    // Only full admins may create privileged accounts. Managers — and editors
+    // granted the canCreateUser override — are limited to Editor accounts.
+    if (req.user.role !== 'admin' && role !== 'editor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admins can create Admin or Manager accounts.'
+      });
     }
     
     // Initialize user fields
@@ -296,7 +295,23 @@ export const toggleUserStatus = async (req, res, next) => {
         message: 'Managers are only authorized to activate/deactivate their own Editors.'
       });
     }
-    
+
+    // Default-deny: editors holding a canActivateUser override must not be able
+    // to act on managers or admins.
+    if (req.user.role !== 'admin' && req.user.role !== 'manager' && user.role !== 'editor') {
+      return res.status(403).json({ success: false, message: 'Not authorized to change this account.' });
+    }
+
+    // Editor-permission-holder scope: limited to editors on their own team,
+    // same scoping rule already applied to managers above.
+    if (req.user.role === 'editor') {
+      const sameTeam = user.assignedManager && req.user.assignedManager &&
+        user.assignedManager.toString() === req.user.assignedManager.toString();
+      if (!sameTeam) {
+        return res.status(403).json({ success: false, message: 'Not authorized to change this account.' });
+      }
+    }
+
     // Toggle status
     const previousState = { status: user.status };
     user.status = user.status === 'active' ? 'inactive' : 'active';

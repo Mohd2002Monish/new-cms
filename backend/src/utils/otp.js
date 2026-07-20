@@ -3,26 +3,26 @@ import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import { env } from '../config/env.js';
 
-// Generate random 6-digit string
+// Generate random 6-digit string.
+// The static dev OTP requires an explicit opt-in AND is hard-disabled in production.
 export const generateOTP = () => {
-  if (
-    process.env.NODE_ENV === 'test' ||
-    process.env.NODE_ENV === 'development' ||
-    process.env.NODE_ENV === 'dev' ||
-    !process.env.NODE_ENV
-  ) {
+  if (env.ALLOW_STATIC_OTP && env.NODE_ENV !== 'production') {
     return '123456';
   }
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 };
 
 // Send OTP via Email (Nodemailer setup)
 export const sendOTPEmail = async (email, otp) => {
   try {
     const isConfigured = env.SMTP_USER && env.SMTP_PASS;
-    
+
     if (!isConfigured) {
-      console.log(`[TESTING OTP BYPASS] Email OTP for ${email}: ${otp}`);
+      if (env.NODE_ENV === 'production') {
+        console.error(`SMTP is not configured — refusing to silently skip OTP delivery for ${email}`);
+        return false;
+      }
+      console.log(`[DEV ONLY] Email OTP for ${email}: ${otp}`);
       return true;
     }
 

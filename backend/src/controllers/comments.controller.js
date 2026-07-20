@@ -2,9 +2,39 @@ import { PostComment } from '../models/PostComment.js';
 import { Post } from '../models/Post.js';
 import * as audit from '../services/audit.service.js';
 
+/**
+ * These are internal editorial review threads attached to a post — access
+ * must mirror the post's own visibility rules (see posts.controller.js),
+ * otherwise any staff account could read/write review notes on a post it has
+ * no relationship to.
+ */
+function assertPostAccess(user, post) {
+  if (user.role === 'admin') return;
+  if (user.role === 'manager') {
+    if (post.assignedManager?.toString() !== user._id.toString()) {
+      const err = new Error('Access denied');
+      err.status = 403;
+      throw err;
+    }
+    return;
+  }
+  const isOwner = post.author.toString() === user._id.toString();
+  const isCoAuthor = post.coAuthors.some((id) => id.toString() === user._id.toString());
+  if (!isOwner && !isCoAuthor) {
+    const err = new Error('Access denied');
+    err.status = 403;
+    throw err;
+  }
+}
+
 export const getComments = async (req, res, next) => {
   try {
     const { postId } = req.params;
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
+    assertPostAccess(req.user, post);
+
     const comments = await PostComment.find({ postId })
       .populate('authorId', 'name email role')
       .populate('replies.authorId', 'name email role')
@@ -30,6 +60,7 @@ export const createComment = async (req, res, next) => {
     if (!post) {
       return res.status(404).json({ success: false, message: 'Post not found' });
     }
+    assertPostAccess(req.user, post);
 
     const comment = await PostComment.create({
       postId,
@@ -62,6 +93,10 @@ export const addReply = async (req, res, next) => {
     const comment = await PostComment.findById(commentId);
     if (!comment) return res.status(404).json({ success: false, message: 'Comment not found' });
 
+    const post = await Post.findById(comment.postId);
+    if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
+    assertPostAccess(req.user, post);
+
     comment.replies.push({
       authorId: req.user._id,
       body,
@@ -87,6 +122,10 @@ export const resolveComment = async (req, res, next) => {
 
     const comment = await PostComment.findById(commentId);
     if (!comment) return res.status(404).json({ success: false, message: 'Comment not found' });
+
+    const post = await Post.findById(comment.postId);
+    if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
+    assertPostAccess(req.user, post);
 
     comment.isResolved = isResolved;
     comment.resolvedBy = isResolved ? req.user._id : null;

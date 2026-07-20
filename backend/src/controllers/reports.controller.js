@@ -30,9 +30,17 @@ export const getOverview = async (req, res, next) => {
       })
     ]);
 
-    const postStatuses = await Post.aggregate([
-      { $match: { deletedAt: null } },
-      { $group: { _id: '$status', count: { $sum: 1 } } }
+    const [postStatuses, postLanguages] = await Promise.all([
+      Post.aggregate([
+        { $match: { deletedAt: null } },
+        { $group: { _id: '$status', count: { $sum: 1 } } }
+      ]),
+      // Per-language content breakdown (en/hi/gu; docs predating the
+      // multilingual migration count as 'en')
+      Post.aggregate([
+        { $match: { deletedAt: null } },
+        { $group: { _id: { $ifNull: ['$language', 'en'] }, count: { $sum: 1 } } }
+      ]),
     ]);
 
     res.json({
@@ -42,7 +50,8 @@ export const getOverview = async (req, res, next) => {
         totalUsers,
         totalCategories,
         activeUsers30d,
-        postStatuses
+        postStatuses,
+        postLanguages
       }
     });
   } catch (error) {
@@ -56,13 +65,14 @@ export const getOverview = async (req, res, next) => {
  */
 export const getPostsOverTime = async (req, res, next) => {
   try {
-    const { from, to, groupBy = 'day' } = req.query;
-    
+    const { from, to, groupBy = 'day', language } = req.query;
+
     let format = '%Y-%m-%d';
     if (groupBy === 'month') format = '%Y-%m';
     if (groupBy === 'year') format = '%Y';
 
     const match = { deletedAt: null, publishedAt: { $ne: null } };
+    if (['en', 'hi', 'gu'].includes(language)) match.language = language;
     if (from || to) {
       match.publishedAt = {};
       if (from) match.publishedAt.$gte = new Date(from);

@@ -44,6 +44,7 @@ import {
 } from '../controllers/publicAuth.controller.js';
 import { validate } from '../middleware/validate.js';
 import { authenticate } from '../middleware/authenticate.js';
+import { otpRequestLimiter, otpVerifyLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
 
@@ -104,12 +105,13 @@ router.get('/tags', getPublicTags);
 router.get('/sitemap-data', getSitemapData);
 
 // ─── Public Reader Authentication ──────────────────────────────────────────────
-router.post('/auth/register', validate(readerRegisterSchema), registerReader);
-router.post('/auth/login-password', validate(readerLoginPasswordSchema), loginPassword);
-router.post('/auth/send-otp', validate(readerSendOtpSchema), sendOtp);
-router.post('/auth/login-otp', validate(readerLoginOtpSchema), loginOtp);
-router.post('/auth/forgot-password', validate(readerForgotPasswordSchema), forgotPassword);
-router.post('/auth/reset-password', validate(readerResetPasswordSchema), resetPassword);
+// Request limiters stop email bombing; verify limiters stop OTP/password brute force.
+router.post('/auth/register', otpRequestLimiter, validate(readerRegisterSchema), registerReader);
+router.post('/auth/login-password', otpVerifyLimiter, validate(readerLoginPasswordSchema), loginPassword);
+router.post('/auth/send-otp', otpRequestLimiter, validate(readerSendOtpSchema), sendOtp);
+router.post('/auth/login-otp', otpVerifyLimiter, validate(readerLoginOtpSchema), loginOtp);
+router.post('/auth/forgot-password', otpRequestLimiter, validate(readerForgotPasswordSchema), forgotPassword);
+router.post('/auth/reset-password', otpVerifyLimiter, validate(readerResetPasswordSchema), resetPassword);
 
 // ─── Reader Preferences & recommendations ──────────────────────────────────────
 router.post('/user/read-articles', authenticate, updateReadArticles);

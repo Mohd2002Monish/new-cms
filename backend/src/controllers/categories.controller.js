@@ -1,18 +1,26 @@
 import Joi from 'joi';
 import { Category } from '../models/Category.js';
 import * as audit from '../services/audit.service.js';
+import { escapeRegex } from '../utils/sanitize.js';
 
 // ─── Validation Schemas ──────────────────────────────────────────────────────
+
+const nameTranslationsSchema = Joi.object({
+  hi: Joi.string().max(80).allow('').optional(),
+  gu: Joi.string().max(80).allow('').optional(),
+});
 
 const createCategorySchema = Joi.object({
   name: Joi.string().min(2).max(80).required(),
   description: Joi.string().max(500).allow('').optional(),
+  nameTranslations: nameTranslationsSchema.optional(),
 });
 
 const updateCategorySchema = Joi.object({
   name: Joi.string().min(2).max(80).optional(),
   description: Joi.string().max(500).allow('').optional(),
   isActive: Joi.boolean().optional(),
+  nameTranslations: nameTranslationsSchema.optional(),
 });
 
 // ─── Controllers ─────────────────────────────────────────────────────────────
@@ -57,7 +65,7 @@ export const createCategory = async (req, res, next) => {
       return res.status(400).json({ success: false, message: error.details[0].message });
     }
 
-    const exists = await Category.findOne({ name: new RegExp(`^${value.name}$`, 'i') });
+    const exists = await Category.findOne({ name: new RegExp(`^${escapeRegex(value.name)}$`, 'i') });
     if (exists) {
       return res.status(409).json({ success: false, message: 'A category with this name already exists' });
     }

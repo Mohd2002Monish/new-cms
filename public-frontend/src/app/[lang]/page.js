@@ -7,6 +7,9 @@ import NewsletterBox from '@/components/NewsletterBox';
 import ForYouRail from '@/components/ForYouRail';
 import { Newspaper } from 'lucide-react';
 
+import { getDictionary, hasLocale } from '@/i18n/dictionaries';
+import { notFound } from 'next/navigation';
+
 export const revalidate = 60; // ISR — revalidate every 60s
 
 export const metadata = {
@@ -17,10 +20,10 @@ export const metadata = {
 
 // ─── Server-side data fetching ────────────────────────────────────────────────
 
-async function fetchAll() {
+async function fetchAll(lang) {
   const [trendingRes, categoriesRes] = await Promise.allSettled([
-    publicApi.getTrending(5),
-    publicApi.getCategories(),
+    publicApi.getTrending(5, { lang }),
+    publicApi.getCategories({ lang }),
   ]);
 
   const categories =
@@ -31,7 +34,7 @@ async function fetchAll() {
   // Fetch 3 articles per category in parallel
   const categoryArticlesResults = await Promise.allSettled(
     categories.map((cat) =>
-      publicApi.getArticlesByCategory(cat.slug, { limit: 3, sort: 'latest' })
+      publicApi.getArticlesByCategory(cat.slug, { limit: 3, sort: 'latest', lang })
     )
   );
 
@@ -48,8 +51,11 @@ async function fetchAll() {
 
 // ─── Homepage ─────────────────────────────────────────────────────────────────
 
-export default async function HomePage() {
-  const { trending, categories, categoryArticles } = await fetchAll();
+export default async function HomePage({ params }) {
+  const { lang } = await params;
+  if (!hasLocale(lang)) notFound();
+  const dict = getDictionary(lang);
+  const { trending, categories, categoryArticles } = await fetchAll(lang);
 
   return (
     <>
@@ -84,7 +90,7 @@ export default async function HomePage() {
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
                 <Newspaper size={40} style={{ opacity: 0.4 }} />
               </div>
-              <p style={{ fontWeight: 600 }}>No articles yet. Check back soon!</p>
+              <p style={{ fontWeight: 600 }}>{dict.noArticlesYet}</p>
             </div>
           )}
         </div>

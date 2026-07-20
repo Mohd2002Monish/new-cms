@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { publicApi } from '@/lib/api';
+import { jsonLdSafe } from '@/lib/utils';
 import Breadcrumb from '@/components/Breadcrumb';
 import CategoryTabStrip from '@/components/CategoryTabStrip';
 import LatestNewsGrid from '@/components/LatestNewsGrid';
@@ -11,18 +12,18 @@ const GRID_PAGE_SIZE = 9;
 
 // ─── Data fetching ─────────────────────────────────────────────────────────────
 
-async function getCategory(slug) {
+async function getCategory(slug, lang) {
   try {
-    const res = await publicApi.getCategories();
+    const res = await publicApi.getCategories({ lang });
     return res.data?.find(c => c.slug === slug) || null;
   } catch { return null; }
 }
 
-async function fetchCategoryData(slug) {
+async function fetchCategoryData(slug, lang) {
   const [categoriesRes, gridRes, trendingRes] = await Promise.allSettled([
-    publicApi.getCategories(),
-    publicApi.getArticles({ category: slug, sort: 'latest', page: 1, limit: GRID_PAGE_SIZE }),
-    publicApi.getTrending(5),
+    publicApi.getCategories({ lang }),
+    publicApi.getArticles({ category: slug, sort: 'latest', page: 1, limit: GRID_PAGE_SIZE, lang }),
+    publicApi.getTrending(5, { lang }),
   ]);
 
   return {
@@ -35,32 +36,34 @@ async function fetchCategoryData(slug) {
 // ─── Dynamic metadata ──────────────────────────────────────────────────────────
 
 export async function generateMetadata({ params }) {
-  const { slug } = await params;
-  const category = await getCategory(slug);
+  const { lang, slug } = await params;
+  const category = await getCategory(slug, lang);
   if (!category) return { title: 'Category Not Found' };
 
+  const name = category.localizedName || category.name;
   return {
-    title: `${category.name} — Latest News`,
+    title: `${name} — Latest News`,
     description:
       category.description ||
-      `Browse the latest ${category.name} news, stories and analysis on NewsPortal.`,
+      `Browse the latest ${name} news, stories and analysis on NewsPortal.`,
   };
 }
 
 // ─── Page Component ────────────────────────────────────────────────────────────
 
 export default async function CategoryPage({ params }) {
-  const { slug } = await params;
+  const { lang, slug } = await params;
 
   const [category, { allCategories, grid, trending }] = await Promise.all([
-    getCategory(slug),
-    fetchCategoryData(slug),
+    getCategory(slug, lang),
+    fetchCategoryData(slug, lang),
   ]);
 
   if (!category) notFound();
 
   const gridArticles = grid.data            || [];
   const gridTotal    = grid.pagination?.total || 0;
+  const categoryName = category.localizedName || category.name;
 
   return (
     <div style={{ paddingTop: 'var(--space-8)', paddingBottom: 'var(--space-16)' }}>
@@ -68,8 +71,8 @@ export default async function CategoryPage({ params }) {
         {/* Breadcrumb */}
         <Breadcrumb
           items={[
-            { label: 'Home', href: '/' },
-            { label: category.name },
+            { label: 'Home', href: `/${lang}` },
+            { label: categoryName },
           ]}
         />
 
@@ -77,7 +80,7 @@ export default async function CategoryPage({ params }) {
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
+            __html: jsonLdSafe({
               '@context': 'https://schema.org',
               '@type': 'BreadcrumbList',
               itemListElement: [
@@ -90,8 +93,8 @@ export default async function CategoryPage({ params }) {
                 {
                   '@type': 'ListItem',
                   position: 2,
-                  name: category.name,
-                  item: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/category/${category.slug}`
+                  name: categoryName,
+                  item: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/${lang}/category/${category.slug}`
                 }
               ]
             })
@@ -114,7 +117,7 @@ export default async function CategoryPage({ params }) {
               marginBottom: 'var(--space-3)',
             }}
           >
-            {category.name}
+            {categoryName}
           </h1>
           {category.description && (
             <p style={{ color: 'var(--color-text-muted)', maxWidth: '48rem', lineHeight: 1.6 }}>
@@ -137,7 +140,7 @@ export default async function CategoryPage({ params }) {
           <div>
             <div className="section-heading">
               <div className="section-heading-line" aria-hidden="true" />
-              <h2>Latest in {category.name}</h2>
+              <h2>Latest in {categoryName}</h2>
             </div>
             <LatestNewsGrid
               initialArticles={gridArticles}

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { slugify, SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE } from '../utils/slugify.js';
 
 // ─── Tiptap reading time helper ──────────────────────────────────────────────
 
@@ -42,6 +43,22 @@ const postSchema = new mongoose.Schema({
     unique: true,
     lowercase: true,
     trim: true,
+  },
+  // Content language. NOTE: the text index below must keep a custom
+  // language_override — MongoDB would otherwise read this field as a text-index
+  // language and reject 'hi'/'gu' as unsupported.
+  language: {
+    type: String,
+    enum: SUPPORTED_LANGUAGES,
+    default: DEFAULT_LANGUAGE,
+    index: true,
+  },
+  // Articles that are translations of each other share a translationGroup,
+  // enabling hreflang alternates and "read in हिन्दी/ગુજરાતી" links.
+  translationGroup: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null,
+    index: true,
   },
   // Tiptap JSON document object
   content: {
@@ -183,13 +200,9 @@ const postSchema = new mongoose.Schema({
 // Auto-generate slug from title + compute reading time
 postSchema.pre('save', function (next) {
   if (this.isModified('title') && !this.slug) {
-    this.slug = this.title
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      + '-' + Date.now();
+    // Unicode-aware: Hindi/Gujarati titles keep their native script in the slug
+    const base = slugify(this.title) || 'article';
+    this.slug = `${base}-${Date.now()}`;
   }
 
   // Recalculate reading time whenever the Tiptap JSON content changes
@@ -208,7 +221,22 @@ postSchema.pre(/^find/, function (next) {
   next();
 });
 
-// Text index for search
-postSchema.index({ title: 'text', excerpt: 'text', tags: 'text' });
+// Text index for search.
+// default_language 'none' disables English stemming/stop-words so Hindi and
+// Gujarati tokens are indexed as-is; language_override points at a field that
+// does not exist so our own `language` field is never misread by MongoDB.
+// (Run scripts/migrate-multilingual.js once to replace the old English-analyzer index.)
+postSchema.index(
+  { title: 'text', excerpt: 'text', tags: 'text' },
+  { default_language: 'none', language_override: 'textIndexLanguageOverride' }
+);
+
+// Compound indexes matching the hot query paths (public lists, trending,
+// category pages, admin list sorted by updatedAt) — language leads the public
+// paths since every reader-facing query is now language-scoped.
+postSchema.index({ language: 1, status: 1, deletedAt: 1, publishedAt: -1 });
+postSchema.index({ language: 1, status: 1, deletedAt: 1, views: -1 });
+postSchema.index({ category: 1, status: 1, publishedAt: -1 });
+postSchema.index({ author: 1, updatedAt: -1 });
 
 export const Post = mongoose.model('Post', postSchema);

@@ -28,4 +28,7 @@ const articleCommentSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+// Comment lists are always fetched per article, newest first
+articleCommentSchema.index({ articleId: 1, createdAt: -1 });
+
 export const ArticleComment = mongoose.model('ArticleComment', articleCommentSchema);

@@ -2,8 +2,8 @@
 
 /* ─── Design Tokens ────────────────────────────────────────────────────────── */
 :root {
-  --font-inter:        'Inter', system-ui, sans-serif;
-  --font-serif:        'Merriweather', Georgia, serif;
+  --font-inter:        'Inter', var(--font-devanagari, 'Noto Sans Devanagari'), var(--font-gujarati, 'Noto Sans Gujarati'), system-ui, sans-serif;
+  --font-serif:        'Merriweather', var(--font-devanagari, 'Noto Sans Devanagari'), var(--font-gujarati, 'Noto Sans Gujarati'), Georgia, serif;
 
   /* Brand */
   --color-brand:       #dc2626;   /* red-600 */

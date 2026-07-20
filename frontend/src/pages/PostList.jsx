@@ -34,6 +34,7 @@ export default function PostList() {
   const [scheduledPublishAt, setScheduledPublishAt] = useState('');
   const [scheduledPublishTime, setScheduledPublishTime] = useState('00:00');
   const [showDeleted, setShowDeleted] = useState(false);
+  const [languageFilter, setLanguageFilter] = useState('');
 
   // Filter states
   const [categoryFilter, setCategoryFilter] = useState(null);
@@ -57,6 +58,7 @@ export default function PostList() {
     try {
       const params = new URLSearchParams({ page, limit: 15 });
       if (status) params.set('status', status);
+      if (languageFilter) params.set('language', languageFilter);
       if (showDeleted) params.set('showDeleted', 'true');
       const { data } = await api.get(`/posts?${params}`);
       setPosts(data.data);
@@ -68,7 +70,7 @@ export default function PostList() {
     }
   };
 
-  useEffect(() => { fetchPosts(); }, [status, page, showDeleted]);
+  useEffect(() => { fetchPosts(); }, [status, page, showDeleted, languageFilter]);
 
   const handleApprove = async () => {
     setActionLoading(approveModal.postId + '_approve');
@@ -174,19 +176,31 @@ export default function PostList() {
         ))}
       </div>
       
-      {isAdmin && (
-        <div className="flex justify-end">
+      <div className="flex justify-end items-center gap-4">
+        <select
+          value={languageFilter}
+          onChange={(e) => setLanguageFilter(e.target.value)}
+          className="text-sm border border-slate-200 rounded-xl px-3 py-1.5 bg-white text-slate-700
+            focus:outline-none focus:ring-2 focus:ring-theme-purple/30 focus:border-theme-purple"
+        >
+          <option value="">All languages</option>
+          <option value="en">English</option>
+          <option value="hi">हिन्दी</option>
+          <option value="gu">ગુજરાતી</option>
+        </select>
+
+        {isAdmin && (
           <label className="flex items-center gap-2 cursor-pointer">
-            <input 
-              type="checkbox" 
-              checked={showDeleted} 
-              onChange={(e) => setShowDeleted(e.target.checked)} 
+            <input
+              type="checkbox"
+              checked={showDeleted}
+              onChange={(e) => setShowDeleted(e.target.checked)}
               className="rounded border-gray-300 text-theme-purple focus:ring-theme-purple"
             />
             <span className="text-sm font-medium text-slate-700">Show Deleted (Trash)</span>
           </label>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
@@ -359,6 +373,11 @@ export default function PostList() {
                           <Link to={`/posts/${post._id}`} className="hover:text-theme-purple transition-colors line-clamp-1">
                             {post.title}
                           </Link>
+                          {post.language && post.language !== 'en' && (
+                            <span className="text-[10px] font-bold tracking-wider text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded-sm whitespace-nowrap uppercase">
+                              {post.language}
+                            </span>
+                          )}
                           {post.isBreaking && (
                             <span className="text-[10px] font-black tracking-wider text-red-600 bg-red-100 px-1.5 py-0.5 rounded-sm whitespace-nowrap">
                               🔴 BREAKING

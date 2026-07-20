@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate, checkActive } from '../middleware/authenticate.js';
+import { requireStaff } from '../middleware/authorize.js';
 import {
   getUploadSignature,
   listMedia,
@@ -10,8 +11,9 @@ import {
 
 const router = Router();
 
-// All routes require authentication
-router.use(authenticate, checkActive);
+// All routes require authentication and a staff account — this grants
+// Cloudinary upload signatures and library CRUD, never for public readers.
+router.use(authenticate, checkActive, requireStaff);
 
 // List media assets
 router.get('/', listMedia);

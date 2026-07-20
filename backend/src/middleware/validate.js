@@ -1,7 +1,7 @@
 export const validate = (schema, property = 'body') => {
   return (req, res, next) => {
-    const { error } = schema.validate(req[property], { abortEarly: false, errors: { label: 'key' } });
-    
+    const { error, value } = schema.validate(req[property], { abortEarly: false, errors: { label: 'key' } });
+
     if (error) {
       const details = error.details.map((detail) => detail.message);
       return res.status(400).json({
@@ -10,7 +10,9 @@ export const validate = (schema, property = 'body') => {
         errors: details
       });
     }
-    
+
+    // Use the validated value so Joi defaults and type coercions actually apply
+    req[property] = value;
     next();
   };
 };

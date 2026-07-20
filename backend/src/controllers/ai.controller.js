@@ -1,4 +1,13 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { sanitizeHtml } from '../utils/sanitize.js';
+
+// Human-readable names for prompt instructions
+const LANGUAGE_NAMES = { en: 'English', hi: 'Hindi (हिन्दी)', gu: 'Gujarati (ગુજરાતી)' };
+
+const languageInstruction = (language) => {
+  const name = LANGUAGE_NAMES[language] || LANGUAGE_NAMES.en;
+  return `Write ALL output text in ${name}.`;
+};
 
 // Simple helper to strip HTML tags
 function stripHtml(html) {
@@ -84,6 +93,7 @@ export const suggestArticleMetadata = async (req, res, next) => {
 
     const prompt = `
 You are an expert editorial AI assistant for a premium news portal.
+${languageInstruction(req.body.language)}
 Analyze the following article draft:
 Title: "${title}"
 Content: "${cleanText.slice(0, 8000)}"
@@ -188,10 +198,11 @@ export const generateFullArticle = async (req, res, next) => {
 
     const promptText = `
 You are a senior investigative journalist and news editor.
+${languageInstruction(req.body.language)}
 Perform a web search to research the latest, most accurate, and comprehensive information on this topic:
 "${prompt}"
 
-Write a detailed, high-quality, and complete news article about it. 
+Write a detailed, high-quality, and complete news article about it.
 Return your response in JSON format with these exact keys:
 {
   "title": "A captivating, click-worthy news headline.",
@@ -213,7 +224,7 @@ Return your response in JSON format with these exact keys:
       success: true,
       data: {
         title: resultJson.title,
-        contentHtml: resultJson.contentHtml
+        contentHtml: sanitizeHtml(resultJson.contentHtml)
       },
       isMocked: false
     });
@@ -286,6 +297,7 @@ export const editArticle = async (req, res, next) => {
 
     const promptText = `
 You are an expert copyeditor and senior news editor.
+Unless the instruction says otherwise, keep the article in its original language (it may be English, Hindi, or Gujarati).
 Take the following HTML article content:
 "${contentHtml}"
 
@@ -317,7 +329,7 @@ Rules:
     res.json({
       success: true,
       data: {
-        contentHtml: cleanResponse
+        contentHtml: sanitizeHtml(cleanResponse)
       },
       isMocked: false
     });

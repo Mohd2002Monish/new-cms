@@ -6,6 +6,10 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { User } from '../models/User.js';
+import { SUPPORTED_LANGUAGES } from '../utils/slugify.js';
+
+// Validate a ?lang= query param; returns null (no filter) when absent/invalid
+const parseLang = (value) => (SUPPORTED_LANGUAGES.includes(value) ? value : null);
 
 // ─── Internal fields stripped from every public response ─────────────────────
 const PUBLIC_POST_FIELDS = `-rejectionReason -deletedAt -deletedBy -reviewedBy
@@ -45,21 +49,24 @@ export const getPublicArticles = async (req, res, next) => {
       category,
       tag,
       author,
-      page  = 1,
-      limit = 12,
       sort  = 'latest',
       slugs,
       isSlider,
     } = req.query;
 
+    const page  = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 12, 1), 50);
+
     const filter = { status: 'live', deletedAt: null };
+    const lang = parseLang(req.query.lang);
+    if (lang) filter.language = lang;
 
     if (category) {
       const cat = await Category.findOne({ slug: category, isActive: true });
       if (cat) filter.category = cat._id;
       else return res.json({
         success: true, data: [],
-        pagination: { total: 0, page: 1, limit: parseInt(limit), pages: 0 },
+        pagination: { total: 0, page: 1, limit, pages: 0 },
       });
     }
 
@@ -74,15 +81,15 @@ export const getPublicArticles = async (req, res, next) => {
       slider:  { sliderOrder: 1, publishedAt: -1 },
     };
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const skip = (page - 1) * limit;
     const [posts, total] = await Promise.all([
       Post.find(filter)
         .sort(sortMap[sort] || sortMap.latest)
         .skip(skip)
-        .limit(parseInt(limit))
+        .limit(limit)
         .populate('author',   'name')
         .populate('category', 'name slug')
-        .select(`title slug excerpt featuredImage seo category tags
+        .select(`title slug excerpt featuredImage seo category tags language
                  publishedAt updatedAt isBreaking priority readingTimeMinutes views`)
         .lean(),
       Post.countDocuments(filter),
@@ -93,9 +100,9 @@ export const getPublicArticles = async (req, res, next) => {
       data: posts,
       pagination: {
         total,
-        page:  parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(total / parseInt(limit)),
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
       },
     });
   } catch (error) {
@@ -114,12 +121,16 @@ export const getTrendingArticles = async (req, res, next) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 5, 10);
 
-    const posts = await Post.find({ status: 'live', deletedAt: null })
+    const trendingFilter = { status: 'live', deletedAt: null };
+    const lang = parseLang(req.query.lang);
+    if (lang) trendingFilter.language = lang;
+
+    const posts = await Post.find(trendingFilter)
       .sort({ views: -1, publishedAt: -1 })
       .limit(limit)
       .populate('author',   'name')
       .populate('category', 'name slug')
-      .select('title slug featuredImage category author publishedAt readingTimeMinutes views isBreaking')
+      .select('title slug featuredImage category author publishedAt readingTimeMinutes views isBreaking language')
       .lean();
 
     res.json({ success: true, data: posts });
@@ -145,6 +156,20 @@ export const getPublicArticleBySlug = async (req, res, next) => {
     if (!post) {
       return res.status(404).json({ success: false, message: 'Article not found' });
     }
+
+    // Sibling translations (for hreflang alternates and language-switch links)
+    let translations = [];
+    if (post.translationGroup) {
+      translations = await Post.find({
+        translationGroup: post.translationGroup,
+        _id: { $ne: post._id },
+        status: 'live',
+        deletedAt: null,
+      })
+        .select('slug language title')
+        .lean();
+    }
+    post.translations = translations;
 
     // Determine user session from Authorization header
     let user = null;
@@ -231,10 +256,11 @@ export const getRelatedArticles = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Article not found' });
     }
 
-    // Find up to 20 recent articles in the same category (excluding current)
+    // Find up to 20 recent articles in the same category and language (excluding current)
     const recentCategoryPosts = await Post.find({
       _id: { $ne: currentPost._id },
       category: currentPost.category,
+      language: currentPost.language || 'en',
       status: 'live',
       deletedAt: null
     })
@@ -275,8 +301,8 @@ export const getRelatedArticles = async (req, res, next) => {
 export const incrementArticleView = async (req, res, next) => {
   try {
     const { slug } = req.params;
-    const ip = (req.headers['x-forwarded-for'] || req.ip || 'unknown')
-      .split(',')[0].trim();
+    // req.ip respects the trust proxy setting; never trust raw x-forwarded-for
+    const ip = req.ip || 'unknown';
 
     // Skip if this IP already viewed this article in the last hour
     if (isRecentView(ip, slug)) {
@@ -304,10 +330,19 @@ export const getPublicCategories = async (req, res, next) => {
   try {
     const categories = await Category.find({ isActive: true, deletedAt: null })
       .sort({ order: 1, name: 1 })
-      .select('name slug description order')
+      .select('name slug description order nameTranslations')
       .lean();
 
-    res.json({ success: true, data: categories });
+    // Convenience: localizedName resolved for the requested language (falls
+    // back to the canonical name when no translation exists)
+    const lang = parseLang(req.query.lang);
+    const data = categories.map((cat) => ({
+      ...cat,
+      localizedName:
+        (lang && lang !== 'en' && cat.nameTranslations?.[lang]) || cat.name,
+    }));
+
+    res.json({ success: true, data });
   } catch (error) {
     next(error);
   }
@@ -363,7 +398,8 @@ export const searchArticles = async (req, res, next) => {
     }
 
     const safeLimit = Math.min(parseInt(limit) || 12, 24);
-    const skip      = (parseInt(page) - 1) * safeLimit;
+    const safePage  = Math.max(parseInt(page) || 1, 1);
+    const skip      = (safePage - 1) * safeLimit;
 
     // Build filter
     const filter = {
@@ -371,6 +407,9 @@ export const searchArticles = async (req, res, next) => {
       deletedAt: null,
       $text:     { $search: q.trim() },
     };
+
+    const lang = parseLang(req.query.lang);
+    if (lang) filter.language = lang;
 
     // Optional category filter (resolve slug → ObjectId)
     if (category) {
@@ -386,19 +425,42 @@ export const searchArticles = async (req, res, next) => {
       if (to)   filter.publishedAt.$lte = new Date(to);
     }
 
+    const SEARCH_FIELDS = `title slug excerpt featuredImage seo category tags language
+                 publishedAt updatedAt isBreaking priority readingTimeMinutes views`;
+
     // Run search + count in parallel
-    const [posts, total] = await Promise.all([
+    let [posts, total] = await Promise.all([
       Post.find(filter, { score: { $meta: 'textScore' } })
         .sort({ score: { $meta: 'textScore' }, publishedAt: -1 })
         .skip(skip)
         .limit(safeLimit)
         .populate('author',   'name')
-        .populate('category', 'name slug')
-        .select(`title slug excerpt featuredImage seo category tags
-                 publishedAt updatedAt isBreaking priority readingTimeMinutes views`)
+        .populate('category', 'name slug nameTranslations')
+        .select(SEARCH_FIELDS)
         .lean(),
       Post.countDocuments(filter),
     ]);
+
+    // Fallback: the text index tokenizes on whitespace, so partial words —
+    // common when typing Hindi/Gujarati — can miss. Retry as a substring
+    // match on the title (input escaped to prevent ReDoS).
+    if (total === 0) {
+      const escaped = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const { $text, ...regexFilter } = filter;
+      regexFilter.title = { $regex: escaped, $options: 'i' };
+
+      [posts, total] = await Promise.all([
+        Post.find(regexFilter)
+          .sort({ publishedAt: -1 })
+          .skip(skip)
+          .limit(safeLimit)
+          .populate('author',   'name')
+          .populate('category', 'name slug nameTranslations')
+          .select(SEARCH_FIELDS)
+          .lean(),
+        Post.countDocuments(regexFilter),
+      ]);
+    }
 
     res.json({
       success: true,
@@ -409,7 +471,7 @@ export const searchArticles = async (req, res, next) => {
       },
       pagination: {
         total,
-        page:  parseInt(page),
+        page:  safePage,
         limit: safeLimit,
         pages: Math.ceil(total / safeLimit),
       },
@@ -430,6 +492,8 @@ export const getSitemapData = async (req, res, next) => {
   try {
     const isRecent = req.query.recent === 'true';
     const filter = { status: 'live', deletedAt: null };
+    const lang = parseLang(req.query.lang);
+    if (lang) filter.language = lang;
 
     if (isRecent) {
       const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
@@ -440,7 +504,7 @@ export const getSitemapData = async (req, res, next) => {
       .sort({ publishedAt: -1 })
       .limit(1000) // Sanity limit
       .populate('category', 'name')
-      .select('title slug publishedAt updatedAt tags')
+      .select('title slug publishedAt updatedAt tags language')
       .lean();
 
     res.json({ success: true, data: posts });
@@ -457,7 +521,7 @@ export const getSitemapData = async (req, res, next) => {
  */
 export const getBreakingArticles = async (req, res, next) => {
   try {
-    const posts = await Post.find({
+    const breakingFilter = {
       status: 'live',
       deletedAt: null,
       isBreaking: true,
@@ -465,7 +529,11 @@ export const getBreakingArticles = async (req, res, next) => {
         { breakingExpiresAt: null },
         { breakingExpiresAt: { $gt: new Date() } }
       ]
-    })
+    };
+    const lang = parseLang(req.query.lang);
+    if (lang) breakingFilter.language = lang;
+
+    const posts = await Post.find(breakingFilter)
       .sort({ publishedAt: -1 })
       .limit(10)
       .select('title slug isBreaking breakingExpiresAt publishedAt')
@@ -560,14 +628,18 @@ export const getArticleComments = async (req, res, next) => {
 export const addArticleComment = async (req, res, next) => {
   try {
     const { authorName, body } = req.body;
-    if (!authorName || !body) {
+    if (!authorName || !body || typeof authorName !== 'string' || typeof body !== 'string') {
       return res.status(400).json({ success: false, message: 'authorName and body are required' });
+    }
+    if (authorName.length > 100 || body.length > 2000) {
+      return res.status(400).json({ success: false, message: 'Comment is too long (name ≤ 100, body ≤ 2000 chars)' });
     }
 
     const post = await Post.findOne({ slug: req.params.slug, status: 'live', deletedAt: null });
     if (!post) return res.status(404).json({ success: false, message: 'Article not found' });
 
-    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    // req.ip respects the trust proxy setting; never trust raw x-forwarded-for
+    const rawIp = req.ip || req.socket.remoteAddress || 'unknown';
 
     const comment = await ArticleComment.create({
       articleId: post._id,
@@ -661,6 +733,7 @@ export const getArticleRecommendations = async (req, res, next) => {
   try {
     const readSlugs = req.user.readArticles || [];
     const userInterests = req.user.interests ? Object.fromEntries(req.user.interests) : {};
+    const lang = parseLang(req.query.lang);
 
     // Sort interest categories by score descending
     const sortedCategories = Object.entries(userInterests)
@@ -688,7 +761,8 @@ export const getArticleRecommendations = async (req, res, next) => {
           status: 'live',
           deletedAt: null,
           slug: { $nin: readSlugs },
-          category: { $in: sortedIds }
+          category: { $in: sortedIds },
+          ...(lang ? { language: lang } : {}),
         })
           .populate('author', 'name')
           .populate('category', 'name slug')
@@ -719,7 +793,8 @@ export const getArticleRecommendations = async (req, res, next) => {
         status: 'live',
         deletedAt: null,
         _id: { $nin: existingIds },
-        slug: { $nin: readSlugs }
+        slug: { $nin: readSlugs },
+        ...(lang ? { language: lang } : {}),
       })
         .sort({ views: -1, publishedAt: -1 })
         .limit(needed)

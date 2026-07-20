@@ -1,7 +1,8 @@
-import { Inter, Merriweather } from 'next/font/google';
+import { Inter, Merriweather, Noto_Sans_Devanagari, Noto_Sans_Gujarati } from 'next/font/google';
+import { notFound } from 'next/navigation';
 
-import Footer from '@/components/Footer';
-import './globals.css';
+import '../globals.css';
+import { LOCALES, hasLocale } from '@/i18n/dictionaries';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -13,6 +14,21 @@ const merriweather = Merriweather({
   subsets: ['latin'],
   variable: '--font-merriweather',
   weight: ['300', '400', '700'],
+  display: 'swap',
+});
+
+// Indic scripts: Hindi (Devanagari) and Gujarati coverage
+const notoDevanagari = Noto_Sans_Devanagari({
+  subsets: ['devanagari'],
+  variable: '--font-devanagari',
+  weight: ['400', '600', '700'],
+  display: 'swap',
+});
+
+const notoGujarati = Noto_Sans_Gujarati({
+  subsets: ['gujarati'],
+  variable: '--font-gujarati',
+  weight: ['400', '600', '700'],
   display: 'swap',
 });
 
@@ -35,18 +51,30 @@ export const metadata = {
   twitter: { card: 'summary_large_image' },
 };
 
+export async function generateStaticParams() {
+  return LOCALES.map((lang) => ({ lang }));
+}
+
 import ThemeProvider from '@/components/ThemeProvider';
 import ClientLayout from '@/components/ClientLayout';
 import { AuthProvider } from '@/context/AuthContext';
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children, params }) {
+  const { lang } = await params;
+  if (!hasLocale(lang)) notFound();
+
   return (
-    <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth" className={`${inter.variable} ${merriweather.variable}`}>
-      <body className="antialiased">
+    <html
+      lang={lang}
+      suppressHydrationWarning
+      data-scroll-behavior="smooth"
+      className={`${inter.variable} ${merriweather.variable} ${notoDevanagari.variable} ${notoGujarati.variable}`}
+    >
+      <body className="antialiased" data-lang={lang}>
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:p-4 focus:bg-white focus:text-black">Skip to main content</a>
         <ThemeProvider>
           <AuthProvider>
-            <ClientLayout>
+            <ClientLayout lang={lang}>
               {children}
             </ClientLayout>
           </AuthProvider>

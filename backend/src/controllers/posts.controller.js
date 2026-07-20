@@ -1,6 +1,8 @@
 import { Post } from '../models/Post.js';
 import { User } from '../models/User.js';
 import Joi from 'joi';
+import { sanitizeHtml } from '../utils/sanitize.js';
+import { SUPPORTED_LANGUAGES } from '../utils/slugify.js';
 import { getIO } from '../services/socket.service.js';
 import * as audit from '../services/audit.service.js';
 import * as notification from '../services/notification.service.js';
@@ -10,6 +12,8 @@ import * as postRevisionService from '../services/postRevision.service.js';
 
 const createPostSchema = Joi.object({
   title: Joi.string().min(3).max(200).required(),
+  language: Joi.string().valid(...SUPPORTED_LANGUAGES).optional(),
+  translationGroup: Joi.string().hex().length(24).optional().allow(null, ''),
   content: Joi.object().optional().allow(null),
   contentHtml: Joi.string().optional().allow('', null),
   excerpt: Joi.string().max(500).allow('').optional(),
@@ -42,6 +46,8 @@ const createPostSchema = Joi.object({
 
 const updatePostSchema = Joi.object({
   title: Joi.string().min(3).max(200).optional(),
+  language: Joi.string().valid(...SUPPORTED_LANGUAGES).optional(),
+  translationGroup: Joi.string().hex().length(24).optional().allow(null, ''),
   content: Joi.object().optional().allow(null),
   contentHtml: Joi.string().optional().allow('', null),
   excerpt: Joi.string().max(500).allow('').optional(),
@@ -90,6 +96,45 @@ function buildVisibilityFilter(user) {
   return { $or: [{ author: user._id }, { coAuthors: user._id }] };
 }
 
+/**
+ * Guard against linking to an arbitrary translationGroup: the group id is
+ * always an existing post's own _id (see the "create translation" flow in
+ * PostEditor.jsx), so resolve it and require the same visibility the user
+ * already has over that anchor post before allowing the link.
+ */
+async function assertTranslationGroupAccess(user, groupId) {
+  if (!groupId) return;
+
+  const anchor = await Post.findOne({
+    $or: [{ _id: groupId }, { translationGroup: groupId }],
+  }).select('author coAuthors assignedManager');
+
+  if (!anchor) {
+    const err = new Error('translationGroup does not reference an existing post');
+    err.status = 400;
+    throw err;
+  }
+
+  if (user.role === 'admin') return;
+
+  if (user.role === 'manager') {
+    if (anchor.assignedManager?.toString() !== user._id.toString()) {
+      const err = new Error('Not authorized to link to this translation group');
+      err.status = 403;
+      throw err;
+    }
+    return;
+  }
+
+  const isOwner = anchor.author.toString() === user._id.toString();
+  const isCoAuthor = anchor.coAuthors.some((id) => id.toString() === user._id.toString());
+  if (!isOwner && !isCoAuthor) {
+    const err = new Error('Not authorized to link to this translation group');
+    err.status = 403;
+    throw err;
+  }
+}
+
 // ─── Controllers ─────────────────────────────────────────────────────────────
 
 /**
@@ -98,7 +143,9 @@ function buildVisibilityFilter(user) {
  */
 export const getPosts = async (req, res, next) => {
   try {
-    const { status, page = 1, limit = 20, search, category, showDeleted } = req.query;
+    const { status, search, category, showDeleted } = req.query;
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100);
     const filter = buildVisibilityFilter(req.user);
 
     if (showDeleted === 'true' && req.user.role === 'admin') {
@@ -109,15 +156,16 @@ export const getPosts = async (req, res, next) => {
 
     if (status) filter.status = status;
     if (category) filter.category = category;
+    if (SUPPORTED_LANGUAGES.includes(req.query.language)) filter.language = req.query.language;
     if (search) filter.$text = { $search: search };
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const skip = (page - 1) * limit;
     const [posts, total] = await Promise.all([
       Post.find(filter)
         .setOptions({ includeDeleted: showDeleted === 'true' })
         .sort({ updatedAt: -1 })
         .skip(skip)
-        .limit(parseInt(limit))
+        .limit(limit)
         .populate('author', 'name email role')
         .populate('coAuthors', 'name email role')
         .populate('assignedManager', 'name email')
@@ -131,9 +179,9 @@ export const getPosts = async (req, res, next) => {
       data: posts,
       pagination: {
         total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(total / parseInt(limit)),
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
       },
     });
   } catch (error) {
@@ -187,6 +235,10 @@ export const createPost = async (req, res, next) => {
     if (error) {
       return res.status(400).json({ success: false, message: error.details[0].message });
     }
+
+    if (value.contentHtml) value.contentHtml = sanitizeHtml(value.contentHtml);
+    if (value.translationGroup === '') value.translationGroup = null;
+    if (value.translationGroup) await assertTranslationGroupAccess(req.user, value.translationGroup);
 
     if (req.user.role === 'editor') {
       delete value.isBreaking;
@@ -266,6 +318,10 @@ export const updatePost = async (req, res, next) => {
 
     const { error, value } = updatePostSchema.validate(req.body);
     if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+
+    if (value.contentHtml) value.contentHtml = sanitizeHtml(value.contentHtml);
+    if (value.translationGroup === '') value.translationGroup = null;
+    if (value.translationGroup) await assertTranslationGroupAccess(req.user, value.translationGroup);
 
     if (req.user.role === 'editor') {
       delete value.isBreaking;

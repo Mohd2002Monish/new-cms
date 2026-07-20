@@ -1,17 +1,24 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { Search } from 'lucide-react';
 
-export default function SearchBar({ defaultValue = '', placeholder = 'Search news...', className = '' }) {
+const LOCALES = ['en', 'hi', 'gu'];
+
+export default function SearchBar({ defaultValue = '', placeholder = 'Search news...', className = '', lang }) {
   const [query, setQuery] = useState(defaultValue);
   const router = useRouter();
+  const pathname = usePathname();
+
+  // Locale comes from the prop when provided, otherwise from the URL prefix
+  const segment = pathname?.split('/')[1];
+  const locale = lang || (LOCALES.includes(segment) ? segment : 'en');
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (query.trim()) {
-      router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+      router.push(`/${locale}/search?q=${encodeURIComponent(query.trim())}`);
     }
   };
 

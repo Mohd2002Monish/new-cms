@@ -10,6 +10,7 @@ import { selectUser } from '../features/auth/authSlice.js';
 import api from '../services/api.js';
 import Select from 'react-select';
 import Datepicker from 'react-tailwindcss-datepicker';
+import DOMPurify from 'dompurify';
 import { CommentMark } from '../extensions/CommentMark.js';
 import { PollExtension } from '../extensions/PollExtension.jsx';
 import MediaLibrary from '../components/MediaLibrary.jsx';
@@ -184,7 +185,7 @@ function LivePreview({ title, html, featuredImageUrl, category, categories, tags
         ) : (
           <div
             className="prose prose-slate max-w-none"
-            dangerouslySetInnerHTML={{ __html: html }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }}
           />
         )}
       </div>
@@ -642,6 +643,7 @@ export default function PostEditor() {
   const [meta, setMeta] = useState({
     title: '',
     excerpt: '',
+    language: 'en',
     category: '',
     tags: '',
     coAuthors: [],
@@ -705,6 +707,7 @@ export default function PostEditor() {
           setMeta({
             title: p.title || '',
             excerpt: p.excerpt || '',
+            language: p.language || 'en',
             category: p.category?._id || '',
             tags: (p.tags || []).join(', '),
             coAuthors: (p.coAuthors || []).map(c => c._id || c),
@@ -757,6 +760,7 @@ export default function PostEditor() {
     setMeta({
       title: rev.title || '',
       excerpt: rev.excerpt || '',
+      language: rev.language || post?.language || 'en',
       category: rev.category || '',
       tags: (rev.tags || []).join(', '),
       coAuthors: (rev.coAuthors || []).map(c => c._id || c),
@@ -790,6 +794,7 @@ export default function PostEditor() {
     setMeta({
       title: post.title || '',
       excerpt: post.excerpt || '',
+      language: post.language || 'en',
       category: post.category?._id || '',
       tags: (post.tags || []).join(', '),
       coAuthors: (post.coAuthors || []).map(c => c._id || c),
@@ -920,6 +925,7 @@ export default function PostEditor() {
     const payload = {
       title: meta.title,
       excerpt: meta.excerpt,
+      language: meta.language || 'en',
       category: meta.category || null,
       tags: meta.tags.split(',').map((t) => t.trim()).filter(Boolean),
       coAuthors: meta.coAuthors,
@@ -962,6 +968,41 @@ export default function PostEditor() {
       setTimeout(() => setSaveMsg(''), 2500);
     } catch (err) {
       setError(err.response?.data?.message || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Create a linked draft in another language. Both articles end up sharing a
+  // translationGroup so the public site can offer hreflang/language-switch links.
+  const handleCreateTranslation = async (langCode) => {
+    if (isNew || !post) { setError('Save the article first'); return; }
+    const langLabel = { en: 'English', hi: 'Hindi', gu: 'Gujarati' }[langCode] || langCode;
+    if (!window.confirm(`Create a linked ${langLabel} draft of this article?`)) return;
+    setSaving(true); setError(null);
+    try {
+      let groupId = post.translationGroup;
+      if (!groupId) {
+        groupId = post._id;
+        await api.patch(`/posts/${id}`, { translationGroup: groupId });
+      }
+      const { data } = await api.post('/posts', {
+        title: `[${langCode.toUpperCase()}] ${meta.title}`,
+        excerpt: meta.excerpt,
+        language: langCode,
+        translationGroup: groupId,
+        category: meta.category || null,
+        tags: meta.tags.split(',').map((t) => t.trim()).filter(Boolean),
+        content: editor?.getJSON(),
+        contentHtml: editor?.getHTML(),
+        featuredImage: meta.featuredImageUrl
+          ? { url: meta.featuredImageUrl, alt: meta.title }
+          : undefined,
+      });
+      navigate(`/posts/${data.data._id}`);
+      window.location.reload();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Could not create translation');
     } finally {
       setSaving(false);
     }
@@ -1377,6 +1418,38 @@ export default function PostEditor() {
                 </h3>
 
                 <div className="space-y-4">
+                  {/* Language */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Language</label>
+                    <select
+                      value={meta.language}
+                      onChange={(e) => setMeta((m) => ({ ...m, language: e.target.value }))}
+                      disabled={!canEdit}
+                      className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white
+                        focus:outline-none focus:ring-2 focus:ring-theme-purple/30 focus:border-theme-purple"
+                    >
+                      <option value="en">English</option>
+                      <option value="hi">हिन्दी (Hindi)</option>
+                      <option value="gu">ગુજરાતી (Gujarati)</option>
+                    </select>
+                    {!isNew && post && canEdit && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {['en', 'hi', 'gu'].filter((l) => l !== meta.language).map((l) => (
+                          <button
+                            key={l}
+                            type="button"
+                            onClick={() => handleCreateTranslation(l)}
+                            disabled={saving}
+                            className="text-xs font-semibold text-theme-purple bg-theme-purple/10 hover:bg-theme-purple/20
+                              px-2.5 py-1 rounded-lg transition-colors disabled:opacity-40"
+                          >
+                            + {{ en: 'English', hi: 'हिन्दी', gu: 'ગુજરાતી' }[l]} version
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Category */}
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Category</label>

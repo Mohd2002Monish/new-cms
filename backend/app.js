@@ -1,7 +1,11 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import mongoSanitize from 'express-mongo-sanitize';
 import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
+
+import { env } from './src/config/env.js';
 
 import authRoutes from './src/routes/auth.js';
 import userRoutes from './src/routes/users.js';
@@ -17,6 +21,19 @@ import aiRoutes from './src/routes/ai.js';
 import { globalApiLimiter } from './src/middleware/rateLimiter.js';
 
 const app = express();
+
+// Behind a reverse proxy / CDN, req.ip must resolve to the real client IP
+// for rate limiting and audit logs to work per-user.
+if (env.TRUST_PROXY) {
+  app.set('trust proxy', Number(env.TRUST_PROXY) || env.TRUST_PROXY);
+}
+
+// Security headers. CSP is disabled because this server only serves a JSON API
+// consumed by separate frontends; cross-origin policies stay relaxed for CORS clients.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 
 // Middlewares
 // Allowed origins: admin panel (Vite) + public portal (Next.js)
@@ -38,6 +55,8 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' })); // Allow larger payloads for Tiptap JSON content
 app.use(cookieParser());
+// Strip $-prefixed keys and dots from user input to block NoSQL operator injection
+app.use(mongoSanitize());
 
 // Apply global API rate limit
 app.use('/api', globalApiLimiter);
@@ -70,10 +89,13 @@ app.use((req, res) => {
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || 'Internal Server Error',
-  });
+  const status = err.status || 500;
+  // Never leak internal error details (stack-adjacent messages) in production
+  const message =
+    status < 500 || env.NODE_ENV !== 'production'
+      ? err.message || 'Internal Server Error'
+      : 'Internal Server Error';
+  res.status(status).json({ success: false, message });
 });
 
 export default app;

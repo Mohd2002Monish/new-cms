@@ -16,13 +16,14 @@ export async function GET() {
   }
 
   const newsItems = articles.map((article) => {
+    const lang = article.language || 'en';
     return `
   <url>
-    <loc>${siteUrl}/articles/${article.slug}</loc>
+    <loc>${siteUrl}/${lang}/articles/${encodeURIComponent(article.slug)}</loc>
     <news:news>
       <news:publication>
         <news:name>NewsPortal</news:name>
-        <news:language>en</news:language>
+        <news:language>${lang}</news:language>
       </news:publication>
       <news:publication_date>${new Date(article.publishedAt).toISOString()}</news:publication_date>
       <news:title><![CDATA[${article.title}]]></news:title>

@@ -49,8 +49,8 @@ export const publicApi = {
   /**
    * Fetch top N trending articles by view count.
    */
-  getTrending: (limit = 5) =>
-    api.get('/public/articles/trending', { params: { limit } }).then(r => r.data),
+  getTrending: (limit = 5, params = {}) =>
+    api.get('/public/articles/trending', { params: { limit, ...params } }).then(r => r.data),
 
   /**
    * Fetch articles for a specific category slug (convenience wrapper).
@@ -61,8 +61,8 @@ export const publicApi = {
   /**
    * Fetch all active categories.
    */
-  getCategories: () =>
-    api.get('/public/categories').then(r => r.data),
+  getCategories: (params = {}) =>
+    api.get('/public/categories', { params }).then(r => r.data),
 
   /**
    * Fetch all distinct tags from live articles.
@@ -109,8 +109,8 @@ export const publicApi = {
   /**
    * Fetch active breaking news articles for the ticker.
    */
-  getBreaking: () =>
-    api.get('/public/articles/breaking').then(r => r.data),
+  getBreaking: (params = {}) =>
+    api.get('/public/articles/breaking', { params }).then(r => r.data),
 
   // ─── Reader Authentication ──────────────────────────────────────────────────
   registerReader: (data) =>
@@ -131,8 +131,8 @@ export const publicApi = {
     api.post('/public/user/read-articles', { slug }).then(r => r.data),
   syncInterest: (categorySlug) =>
     api.post('/public/user/interests', { categorySlug }).then(r => r.data),
-  getRecommendations: () =>
-    api.get('/public/articles/recommendations').then(r => r.data),
+  getRecommendations: (params = {}) =>
+    api.get('/public/articles/recommendations', { params }).then(r => r.data),
 
   // ─── Reader Cloud Bookmarks Sync ───────────────────────────────────────────
   toggleBookmarkDb: (slug) =>

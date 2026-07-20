@@ -48,6 +48,20 @@ export const authorize = (...roles) => {
   };
 };
 
+// Restrict to CMS staff accounts (admin/manager/editor). Public "reader"
+// accounts (self-registered via /api/public/auth/register) authenticate with
+// a structurally identical JWT, so admin-panel routers must gate on this
+// explicitly rather than relying on `authenticate` alone.
+export const requireStaff = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'Not authenticated' });
+  }
+  if (!['admin', 'manager', 'editor'].includes(req.user.role)) {
+    return res.status(403).json({ success: false, message: 'This action is restricted to CMS staff accounts' });
+  }
+  next();
+};
+
 // Check for granular permission (checking user-specific overrides, falling back to role defaults)
 export const hasPermission = (permissionKey) => {
   return async (req, res, next) => {

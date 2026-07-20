@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { env } from '../config/env.js';
+import { escapeRegex } from '../utils/sanitize.js';
 import { MediaAsset } from '../models/MediaAsset.js';
 import { Post } from '../models/Post.js';
 import * as audit from '../services/audit.service.js';
@@ -13,7 +14,15 @@ cloudinary.config({
 export const getUploadSignature = (req, res) => {
   try {
     const timestamp = Math.round(new Date().getTime() / 1000);
+    // Only sign uploads into the app's own folder tree with safe public_ids —
+    // never sign arbitrary client-supplied paths.
     const folder = req.body.folder || 'news-cms';
+    if (!/^news-cms(\/[\w-]+)*$/.test(folder)) {
+      return res.status(400).json({ success: false, message: 'Invalid upload folder' });
+    }
+    if (req.body.public_id && !/^[\w-]+$/.test(req.body.public_id)) {
+      return res.status(400).json({ success: false, message: 'Invalid public_id' });
+    }
 
     const paramsToSign = {
       timestamp,
@@ -40,25 +49,28 @@ export const getUploadSignature = (req, res) => {
 
 export const listMedia = async (req, res, next) => {
   try {
-    const { search, tag, page = 1, limit = 20 } = req.query;
-    
+    const { search, tag } = req.query;
+
     const query = { deletedAt: null };
     if (tag) query.tags = tag;
     if (search) {
+      const safeSearch = escapeRegex(search);
       query.$or = [
-        { fileName: { $regex: search, $options: 'i' } },
-        { altText: { $regex: search, $options: 'i' } },
+        { fileName: { $regex: safeSearch, $options: 'i' } },
+        { altText: { $regex: safeSearch, $options: 'i' } },
       ];
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100);
+    const skip = (page - 1) * limit;
+
     const [assets, total] = await Promise.all([
       MediaAsset.find(query)
         .populate('uploadedBy', 'name email role')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(parseInt(limit)),
+        .limit(limit),
       MediaAsset.countDocuments(query)
     ]);
 
@@ -145,8 +157,8 @@ export const deleteMedia = async (req, res, next) => {
     const isInUse = await Post.exists({
       deletedAt: null,
       $or: [
-        { contentHtml: { $regex: asset.cloudinaryPublicId, $options: 'i' } },
-        { 'featuredImage.url': { $regex: asset.cloudinaryPublicId, $options: 'i' } }
+        { contentHtml: { $regex: escapeRegex(asset.cloudinaryPublicId), $options: 'i' } },
+        { 'featuredImage.url': { $regex: escapeRegex(asset.cloudinaryPublicId), $options: 'i' } }
       ]
     });
 
