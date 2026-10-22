@@ -32,7 +32,6 @@ export function useBookmarks() {
             if (syncRes?.success) {
               setBookmarks(syncRes.bookmarks);
               localStorage.removeItem(BOOKMARKS_KEY); // clear local storage since we synchronized
-              window.dispatchEvent(new Event('bookmarks-updated'));
               setIsLoaded(true);
               return;
             }

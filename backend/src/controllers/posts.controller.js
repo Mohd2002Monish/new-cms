@@ -7,6 +7,7 @@ import { getIO } from '../services/socket.service.js';
 import * as audit from '../services/audit.service.js';
 import * as notification from '../services/notification.service.js';
 import * as postRevisionService from '../services/postRevision.service.js';
+import { clearPublicArticlesCache } from '../services/cache.service.js';
 
 // ─── Validation Schemas ──────────────────────────────────────────────────────
 
@@ -18,7 +19,8 @@ const createPostSchema = Joi.object({
   contentHtml: Joi.string().optional().allow('', null),
   excerpt: Joi.string().max(500).allow('').optional(),
   category: Joi.string().hex().length(24).optional().allow(null, ''),
-  tags: Joi.array().items(Joi.string().max(50)).max(10).optional(),
+  subCategory: Joi.string().hex().length(24).optional().allow(null, ''),
+  tags: Joi.array().items(Joi.string().max(50)).max(25).optional(),
   featuredImage: Joi.object({
     url: Joi.string().optional().allow(null, ''),   // accepts https:// and data: URIs
     publicId: Joi.string().optional().allow(null, ''),
@@ -52,7 +54,8 @@ const updatePostSchema = Joi.object({
   contentHtml: Joi.string().optional().allow('', null),
   excerpt: Joi.string().max(500).allow('').optional(),
   category: Joi.string().hex().length(24).optional().allow(null, ''),
-  tags: Joi.array().items(Joi.string().max(50)).max(10).optional(),
+  subCategory: Joi.string().hex().length(24).optional().allow(null, ''),
+  tags: Joi.array().items(Joi.string().max(50)).max(25).optional(),
   featuredImage: Joi.object({
     url: Joi.string().optional().allow(null, ''),   // accepts https:// and data: URIs
     publicId: Joi.string().optional().allow(null, ''),
@@ -170,6 +173,7 @@ export const getPosts = async (req, res, next) => {
         .populate('coAuthors', 'name email role')
         .populate('assignedManager', 'name email')
         .populate('category', 'name slug')
+        .populate('subCategory', 'name slug')
         .select('-content'), // exclude heavy Tiptap JSON in list view
       Post.countDocuments(filter).setOptions({ includeDeleted: showDeleted === 'true' }),
     ]);
@@ -200,7 +204,8 @@ export const getPostById = async (req, res, next) => {
       .populate('coAuthors', 'name email role')
       .populate('assignedManager', 'name email')
       .populate('reviewedBy', 'name email')
-      .populate('category', 'name slug');
+      .populate('category', 'name slug')
+      .populate('subCategory', 'name slug');
 
     if (!post) {
       return res.status(404).json({ success: false, message: 'Post not found' });
@@ -489,6 +494,8 @@ export const approvePost = async (req, res, next) => {
       });
     }
 
+    clearPublicArticlesCache().catch(() => {});
+
     res.json({ success: true, message: `Post ${newStatus}`, data: post });
   } catch (error) {
     next(error);
@@ -581,6 +588,8 @@ export const deletePost = async (req, res, next) => {
       req, action: 'POST_DELETED', targetType: 'Post', targetId: post._id, targetLabel,
       previousState: { status: post.status, deletedAt: null }
     });
+
+    clearPublicArticlesCache().catch(() => {});
 
     res.json({ success: true, message: 'Post soft deleted' });
   } catch (error) {

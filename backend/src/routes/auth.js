@@ -1,5 +1,5 @@
 import express from 'express';
-import { login, verifyOtp, refreshAccessToken, logout, loginSchema, verifyOtpSchema } from '../controllers/auth.controller.js';
+import { login, verifyOtp, refreshAccessToken, logout, devLogin, loginSchema, verifyOtpSchema } from '../controllers/auth.controller.js';
 import { validate } from '../middleware/validate.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { otpRequestLimiter, otpVerifyLimiter } from '../middleware/rateLimiter.js';
@@ -10,5 +10,6 @@ router.post('/login', otpRequestLimiter, validate(loginSchema), login);
 router.post('/verify-otp', otpVerifyLimiter, validate(verifyOtpSchema), verifyOtp);
 router.post('/refresh', refreshAccessToken);
 router.post('/logout', authenticate, logout);
+router.post('/dev-login', devLogin);
 
 export default router;

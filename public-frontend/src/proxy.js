@@ -39,6 +39,8 @@ export function proxy(request) {
   return response;
 }
 
+export default proxy;
+
 export const config = {
   // Skip Next internals, API routes, and any file-like path (sitemap.xml,
   // manifest.json, favicon.ico, images, …)

@@ -45,3 +45,32 @@ export const checkActive = (req, res, next) => {
   }
   next();
 };
+
+export const optionalAuthenticate = async (req, res, next) => {
+  try {
+    let token;
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+    } else if (req.cookies && req.cookies.token) {
+      token = req.cookies.token;
+    }
+
+    if (!token) {
+      req.user = null;
+      return next();
+    }
+
+    try {
+      const decoded = jwt.verify(token, env.JWT_SECRET);
+      const user = await User.findById(decoded.id);
+      req.user = user || null;
+    } catch {
+      req.user = null;
+    }
+    next();
+  } catch (error) {
+    req.user = null;
+    next();
+  }
+};
+

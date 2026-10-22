@@ -78,6 +78,24 @@ export default function NotificationsBell() {
     }
   };
 
+  const handleNotificationClick = async (notif) => {
+    if (!notif.isRead) {
+      api.patch(`/notifications/${notif._id}/read`).catch(() => {});
+      setUnreadCount((c) => Math.max(0, c - 1));
+      setNotifications((prev) =>
+        prev.map((n) => (n._id === notif._id ? { ...n, isRead: true } : n))
+      );
+    }
+    setIsOpen(false);
+    if (notif.type === 'NEW_CHAT_MESSAGE' || notif.relatedModel === 'ChatMessage') {
+      navigate('/chat');
+    } else if (notif.relatedModel === 'Post' && notif.relatedId) {
+      navigate(`/posts/${notif.relatedId}`);
+    } else {
+      navigate('/notifications');
+    }
+  };
+
   const navigateToAll = () => {
     setIsOpen(false);
     navigate('/notifications');
@@ -120,7 +138,8 @@ export default function NotificationsBell() {
                 {notifications.map((notif) => (
                   <li
                     key={notif._id}
-                    className={`p-4 transition-colors hover:bg-slate-50 ${notif.isRead ? 'opacity-70' : 'bg-theme-purple/5'}`}
+                    onClick={() => handleNotificationClick(notif)}
+                    className={`p-4 transition-colors hover:bg-slate-50 cursor-pointer ${notif.isRead ? 'opacity-70' : 'bg-theme-purple/5'}`}
                   >
                     <div className="flex gap-3">
                       <div className="flex-1 min-w-0">

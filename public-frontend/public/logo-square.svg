@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="100%" height="100%">
+  <defs>
+    <!-- Facet 1: Left column front -->
+    <linearGradient id="sqFacet1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF4B72"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+    <!-- Facet 2: Left column shadow crease -->
+    <linearGradient id="sqFacet2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#DC2626"/>
+      <stop offset="100%" stop-color="#991B1B"/>
+    </linearGradient>
+    <!-- Facet 3: Diagonal bridge main -->
+    <linearGradient id="sqFacet3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF3366"/>
+      <stop offset="60%" stop-color="#DC2626"/>
+      <stop offset="100%" stop-color="#B91C1C"/>
+    </linearGradient>
+    <!-- Facet 4: Diagonal highlight -->
+    <linearGradient id="sqFacet4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFA8BA"/>
+      <stop offset="100%" stop-color="#FF4B72"/>
+    </linearGradient>
+    <!-- Facet 5: Right column -->
+    <linearGradient id="sqFacet5" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF2E63"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+    <!-- Subtle drop glow -->
+    <filter id="sqGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Transparent Background: No rect tag -->
+
+  <!-- Centered Emblem: 3D Origami Faceted 'N' -->
+  <g transform="translate(68, 20) scale(0.36)" filter="url(#sqGlow)">
+    <!-- Left Column Left Plane -->
+    <polygon points="0,290 0,70 70,0 70,220" fill="url(#sqFacet1)" />
+    <!-- Left Column Shadow Crease -->
+    <polygon points="70,0 70,220 120,290 120,70" fill="url(#sqFacet2)" />
+    
+    <!-- Diagonal Bridge Front -->
+    <polygon points="70,0 215,220 145,290 0,70" fill="url(#sqFacet3)" opacity="0.95" />
+    <!-- Diagonal Inner Facet Fold -->
+    <polygon points="70,0 145,290 120,290 70,220" fill="url(#sqFacet4)" opacity="0.4" />
+    
+    <!-- Right Column Front -->
+    <polygon points="215,70 215,290 285,220 285,0" fill="url(#sqFacet5)" />
+    <!-- Right Column Shadow Side -->
+    <polygon points="145,0 215,70 215,290 145,220" fill="url(#sqFacet2)" />
+
+    <!-- Broadcast Signal Dot -->
+    <circle cx="285" cy="0" r="14" fill="#FF2E63" />
+  </g>
+
+  <!-- Centered Typography -->
+  <text x="120" y="172" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="28" font-weight="900" letter-spacing="-0.8px" fill="currentColor">
+    News<tspan fill="#DC2626">Portal</tspan>
+  </text>
+
+  <!-- Subtle Subtitle for Mobile Badge -->
+  <text x="120" y="196" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="8.5" font-weight="700" letter-spacing="2.2px" fill="#94A3B8">
+    DIGITAL NEWS
+  </text>
+</svg>

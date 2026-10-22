@@ -4,6 +4,7 @@ import { Permission } from '../models/Permission.js';
 import { Post } from '../models/Post.js';
 import * as audit from '../services/audit.service.js';
 import * as notification from '../services/notification.service.js';
+import { escapeRegex } from '../utils/sanitize.js';
 
 // ─── Validation Schemas ───────────────────────────────────────────────────────
 export const createUserSchema = Joi.object({
@@ -83,7 +84,7 @@ export const getStats = async (req, res, next) => {
 
 // --- Controller Actions ---
 
-// @desc    List all users
+// @desc    List all users (segregated by type: staff vs readers)
 // @route   GET /api/users
 // @access  Private (Admin/Manager)
 export const listUsers = async (req, res, next) => {
@@ -93,10 +94,35 @@ export const listUsers = async (req, res, next) => {
       // Admin can see anyone
       filter = {};
     } else if (req.user.role === 'manager') {
-      // Manager can only see editors assigned to them
-      filter = { assignedManager: req.user._id };
+      // Manager can only see editors assigned to them (or readers)
+      if (req.query.type === 'reader' || req.query.type === 'user') {
+        filter = { role: 'reader' };
+      } else {
+        filter = { assignedManager: req.user._id };
+      }
     } else {
       return res.status(403).json({ success: false, message: 'Not authorized to list users' });
+    }
+
+    // Role / Type segregation
+    const { type, role, search, status } = req.query;
+    if (type === 'staff' || type === 'employee') {
+      filter.role = { $in: ['admin', 'manager', 'editor'] };
+    } else if (type === 'reader' || type === 'user') {
+      filter.role = 'reader';
+    } else if (role) {
+      filter.role = role;
+    }
+
+    // Status filter
+    if (status && ['active', 'inactive'].includes(status)) {
+      filter.status = status;
+    }
+
+    // Search filter by name or email
+    if (search && search.trim()) {
+      const searchRegex = new RegExp(escapeRegex(search.trim()), 'i');
+      filter.$or = [{ name: searchRegex }, { email: searchRegex }];
     }
     
     if (req.query.showDeleted === 'true') {
@@ -110,10 +136,21 @@ export const listUsers = async (req, res, next) => {
       .populate('createdBy', 'name email role')
       .populate('assignedManager', 'name email role')
       .sort({ createdAt: -1 });
+
+    // Format reader metrics nicely for frontends
+    const formatted = users.map((u) => {
+      const doc = u.toObject();
+      if (doc.role === 'reader') {
+        doc.bookmarksCount = doc.bookmarks?.length || 0;
+        doc.readArticlesCount = doc.readArticles?.length || 0;
+        doc.interests = doc.interests instanceof Map ? Object.fromEntries(doc.interests) : (doc.interests || {});
+      }
+      return doc;
+    });
       
     res.status(200).json({
       success: true,
-      data: users
+      data: formatted
     });
   } catch (error) {
     next(error);

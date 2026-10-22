@@ -12,6 +12,16 @@ export const loginUser = createAsyncThunk('auth/login', async ({ email, password
   }
 });
 
+export const devLoginUser = createAsyncThunk('auth/devLogin', async (role, { rejectWithValue }) => {
+  try {
+    const { data } = await api.post('/auth/dev-login', { role });
+    localStorage.setItem('accessToken', data.data.accessToken);
+    return data.data;
+  } catch (err) {
+    return rejectWithValue(err.response?.data?.message || 'Dev login failed');
+  }
+});
+
 export const verifyOTP = createAsyncThunk('auth/verifyOtp', async ({ email, otp }, { rejectWithValue }) => {
   try {
     const { data } = await api.post('/auth/verify-otp', { email, otp });
@@ -113,6 +123,22 @@ const authSlice = createSlice({
         state.user = action.payload.user;
       })
       .addCase(verifyOTP.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      });
+
+    // Dev Login (1-click)
+    builder
+      .addCase(devLoginUser.pending, (state) => { state.loading = true; state.error = null; })
+      .addCase(devLoginUser.fulfilled, (state, action) => {
+        state.loading = false;
+        state.isAuthenticated = true;
+        state.otpPending = false;
+        state.otpEmail = null;
+        state.accessToken = action.payload.accessToken;
+        state.user = action.payload.user;
+      })
+      .addCase(devLoginUser.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       });

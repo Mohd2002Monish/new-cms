@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api.js';
 
 export default function Notifications() {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 1 });
@@ -41,6 +43,17 @@ export default function Notifications() {
     }
   };
 
+  const handleNotificationClick = (notif) => {
+    if (!notif.isRead) {
+      handleMarkAsRead(notif._id);
+    }
+    if (notif.type === 'NEW_CHAT_MESSAGE' || notif.relatedModel === 'ChatMessage') {
+      navigate('/chat');
+    } else if (notif.relatedModel === 'Post' && notif.relatedId) {
+      navigate(`/posts/${notif.relatedId}`);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
@@ -72,7 +85,8 @@ export default function Notifications() {
             {notifications.map((notif) => (
               <li
                 key={notif._id}
-                className={`p-5 transition-colors hover:bg-slate-50 flex items-start gap-4 ${notif.isRead ? 'opacity-70' : 'bg-theme-purple/5'}`}
+                onClick={() => handleNotificationClick(notif)}
+                className={`p-5 transition-colors hover:bg-slate-50 flex items-start gap-4 cursor-pointer ${notif.isRead ? 'opacity-70' : 'bg-theme-purple/5'}`}
               >
                 <div className={`mt-1 flex-shrink-0 w-2 h-2 rounded-full ${notif.isRead ? 'bg-transparent' : 'bg-theme-purple'}`} />
                 <div className="flex-1 min-w-0">
@@ -85,7 +99,10 @@ export default function Notifications() {
                 </div>
                 {!notif.isRead && (
                   <button
-                    onClick={() => handleMarkAsRead(notif._id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleMarkAsRead(notif._id);
+                    }}
                     className="flex-shrink-0 px-3 py-1.5 text-xs font-bold text-theme-purple border border-theme-purple/20 rounded-lg hover:bg-theme-purple/10 transition-colors"
                   >
                     Mark read

@@ -15,18 +15,33 @@ const parseLang = (value) => (SUPPORTED_LANGUAGES.includes(value) ? value : null
 const PUBLIC_POST_FIELDS = `-rejectionReason -deletedAt -deletedBy -reviewedBy
   -reviewedAt -submittedAt -assignedManager -coAuthors`;
 
-// ─── View deduplication (in-memory, 1-hour TTL per IP+slug) ──────────────────
-// Key: `${ip}:${slug}`, Value: timestamp of last view
+import { getRedisClient, isRedisReady } from '../config/redis.js';
+
+// ─── View deduplication (Redis with in-memory fallback, 1-hour TTL per IP+slug) ──
 const viewLog = new Map();
 const VIEW_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-function isRecentView(ip, slug) {
+async function isRecentView(ip, slug) {
+  // Use Redis atomic SET if not exists (NX) with 3600 seconds expiration
+  if (isRedisReady()) {
+    try {
+      const client = getRedisClient();
+      const redisKey = `view:${ip}:${slug}`;
+      const result = await client.set(redisKey, '1', 'EX', 3600, 'NX');
+      // result === 'OK' means the key was set (first view in 1 hour)
+      // result === null means key already existed (recent view -> debounce)
+      return result === null;
+    } catch (err) {
+      console.warn('[viewTracker] Redis check failed, using memory fallback:', err.message);
+    }
+  }
+
+  // In-memory fallback
   const key = `${ip}:${slug}`;
   const ts  = viewLog.get(key);
   if (ts && Date.now() - ts < VIEW_TTL_MS) return true;
   viewLog.set(key, Date.now());
 
-  // Prune stale entries when the map grows large (prevent memory leak)
   if (viewLog.size > 20_000) {
     const cutoff = Date.now() - VIEW_TTL_MS;
     for (const [k, t] of viewLog) {
@@ -47,6 +62,7 @@ export const getPublicArticles = async (req, res, next) => {
   try {
     const {
       category,
+      subCategory,
       tag,
       author,
       sort  = 'latest',
@@ -63,16 +79,45 @@ export const getPublicArticles = async (req, res, next) => {
 
     if (category) {
       const cat = await Category.findOne({ slug: category, isActive: true });
-      if (cat) filter.category = cat._id;
-      else return res.json({
-        success: true, data: [],
-        pagination: { total: 0, page: 1, limit, pages: 0 },
-      });
+      if (cat) {
+        // Include category and its child subcategories
+        const childCats = await Category.find({ parentCategory: cat._id, isActive: true }).select('_id');
+        const allCatIds = [cat._id, ...childCats.map((c) => c._id)];
+        filter.$or = [
+          { category: { $in: allCatIds } },
+          { subCategory: { $in: allCatIds } },
+        ];
+      } else {
+        return res.json({
+          success: true,
+          data: [],
+          pagination: { total: 0, page: 1, limit, pages: 0 },
+        });
+      }
+    }
+
+    if (subCategory) {
+      const subCat = await Category.findOne({ slug: subCategory, isActive: true });
+      if (subCat) {
+        filter.subCategory = subCat._id;
+      } else {
+        return res.json({
+          success: true,
+          data: [],
+          pagination: { total: 0, page: 1, limit, pages: 0 },
+        });
+      }
     }
 
     if (tag)    filter.tags   = tag.toLowerCase();
     if (author) filter.author = author;
     if (slugs)  filter.slug   = { $in: slugs.split(',').map(s => s.trim()) };
+    if (req.query.excludeSlugs) {
+      const excluded = req.query.excludeSlugs.split(',').map(s => s.trim()).filter(Boolean);
+      if (excluded.length > 0) {
+        filter.slug = { ...(filter.slug || {}), $nin: excluded };
+      }
+    }
     if (isSlider === 'true') filter.isSlider = true;
 
     const sortMap = {
@@ -88,8 +133,9 @@ export const getPublicArticles = async (req, res, next) => {
         .skip(skip)
         .limit(limit)
         .populate('author',   'name')
-        .populate('category', 'name slug')
-        .select(`title slug excerpt featuredImage seo category tags language
+        .populate('category', 'name slug nameTranslations')
+        .populate('subCategory', 'name slug nameTranslations')
+        .select(`title slug excerpt featuredImage seo category subCategory tags language
                  publishedAt updatedAt isBreaking priority readingTimeMinutes views`)
         .lean(),
       Post.countDocuments(filter),
@@ -147,9 +193,17 @@ export const getTrendingArticles = async (req, res, next) => {
  */
 export const getPublicArticleBySlug = async (req, res, next) => {
   try {
-    const post = await Post.findOne({ slug: req.params.slug, status: 'live', deletedAt: null })
-      .populate('author',   'name')
-      .populate('category', 'name slug description')
+    const rawSlug = req.params.slug;
+    let decodedSlug = rawSlug;
+    try { decodedSlug = decodeURIComponent(rawSlug); } catch (_) {}
+    const post = await Post.findOne({
+      slug: { $in: [rawSlug, decodedSlug] },
+      status: 'live',
+      deletedAt: null
+    })
+      .populate('author',      'name')
+      .populate('category',    'name slug description')
+      .populate('subCategory', 'name slug description')
       .select(PUBLIC_POST_FIELDS)
       .lean();
 
@@ -305,7 +359,8 @@ export const incrementArticleView = async (req, res, next) => {
     const ip = req.ip || 'unknown';
 
     // Skip if this IP already viewed this article in the last hour
-    if (isRecentView(ip, slug)) {
+    const alreadyViewed = await isRecentView(ip, slug);
+    if (alreadyViewed) {
       return res.json({ success: true, deduplicated: true });
     }
 
@@ -330,7 +385,8 @@ export const getPublicCategories = async (req, res, next) => {
   try {
     const categories = await Category.find({ isActive: true, deletedAt: null })
       .sort({ order: 1, name: 1 })
-      .select('name slug description order nameTranslations')
+      .select('name slug description order nameTranslations parentCategory tags')
+      .populate('parentCategory', 'name slug')
       .lean();
 
     // Convenience: localizedName resolved for the requested language (falls
@@ -338,6 +394,7 @@ export const getPublicCategories = async (req, res, next) => {
     const lang = parseLang(req.query.lang);
     const data = categories.map((cat) => ({
       ...cat,
+      tags: Array.isArray(cat.tags) ? cat.tags : [],
       localizedName:
         (lang && lang !== 'en' && cat.nameTranslations?.[lang]) || cat.name,
     }));
@@ -726,87 +783,260 @@ export const updateInterests = async (req, res, next) => {
 };
 
 /**
+ * POST /api/public/track-interaction
+ * Track reader behavior (view, scroll depth, read complete, like, bookmark, share, tag clicks)
+ * to intelligently update interest vectors for accurate content recommendations.
+ */
+export const trackInteraction = async (req, res, next) => {
+  try {
+    const {
+      articleSlug,
+      action = 'view',
+      timeSpentSeconds = 0,
+      scrollDepthPercent = 0,
+      tag,
+    } = req.body;
+
+    if (!articleSlug) {
+      return res.status(400).json({ success: false, message: 'articleSlug is required' });
+    }
+
+    const post = await Post.findOne({ slug: articleSlug, status: 'live', deletedAt: null })
+      .populate('category', 'name slug')
+      .populate('subCategory', 'name slug');
+
+    if (!post) {
+      return res.status(404).json({ success: false, message: 'Article not found' });
+    }
+
+    // Scoring matrix for user actions
+    const ACTION_WEIGHTS = {
+      view: 1,
+      read_25: 1,
+      read_50: 2,
+      read_complete: 4,
+      like: 3,
+      bookmark: 4,
+      share: 3,
+      tag_click: 2,
+    };
+
+    const points = ACTION_WEIGHTS[action] || 1;
+
+    // If reader is logged in and tracking is active, update their affinity profile
+    if (req.user && req.user.trackingEnabled) {
+      if (!req.user.interests) req.user.interests = new Map();
+
+      // Category affinity boost
+      if (post.category?.slug) {
+        const curCat = req.user.interests.get(post.category.slug) || 0;
+        req.user.interests.set(post.category.slug, curCat + points);
+      }
+
+      // Subcategory affinity boost (even more specific)
+      if (post.subCategory?.slug) {
+        const curSub = req.user.interests.get(post.subCategory.slug) || 0;
+        req.user.interests.set(post.subCategory.slug, curSub + points + 1);
+      }
+
+      // Tag affinities boost
+      if (Array.isArray(post.tags)) {
+        post.tags.forEach((t) => {
+          const cleanTag = t.trim().toLowerCase();
+          if (cleanTag) {
+            const curTag = req.user.interests.get(cleanTag) || 0;
+            req.user.interests.set(cleanTag, curTag + Math.ceil(points * 0.8));
+          }
+        });
+      }
+
+      // Explicit tag clicked boost
+      if (tag && typeof tag === 'string') {
+        const cleanClickedTag = tag.trim().toLowerCase();
+        if (cleanClickedTag) {
+          const curTag = req.user.interests.get(cleanClickedTag) || 0;
+          req.user.interests.set(cleanClickedTag, curTag + points + 1);
+        }
+      }
+
+      // Read history & streak update
+      if (['view', 'read_50', 'read_complete'].includes(action)) {
+        if (!req.user.readArticles.includes(articleSlug)) {
+          req.user.readArticles.push(articleSlug);
+        }
+
+        const now = new Date();
+        if (req.user.lastReadDate) {
+          const dayDiff = Math.floor((now - new Date(req.user.lastReadDate)) / (1000 * 60 * 60 * 24));
+          if (dayDiff === 1) {
+            req.user.readingStreak += 1;
+          } else if (dayDiff > 1) {
+            req.user.readingStreak = 1;
+          }
+        } else {
+          req.user.readingStreak = 1;
+        }
+        req.user.lastReadDate = now;
+        req.user.monthlyViewsCount = (req.user.monthlyViewsCount || 0) + 1;
+      }
+
+      await req.user.save();
+    }
+
+    // Increment overall post views on genuine view action
+    if (action === 'view') {
+      post.views = (post.views || 0) + 1;
+      await post.save();
+    }
+
+    res.json({
+      success: true,
+      action,
+      articleSlug,
+      recorded: true,
+      currentStreak: req.user?.readingStreak || 0,
+      userInterests: req.user?.interests ? Object.fromEntries(req.user.interests) : null,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * GET /api/public/articles/recommendations
- * Returns up to 4 personalized recommendations based on interests.
+ * Multi-factor recommendation engine combining:
+ * 1. User category affinities
+ * 2. Topic tags matches
+ * 3. Subcategory relevance
+ * 4. Freshness/recency decay
+ * 5. Popularity/views signal
+ * 6. Breaking news boost
+ * With graceful fallback to trending/curated content for guests/cold start.
  */
 export const getArticleRecommendations = async (req, res, next) => {
   try {
-    const readSlugs = req.user.readArticles || [];
-    const userInterests = req.user.interests ? Object.fromEntries(req.user.interests) : {};
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit, 10) || 6), 30);
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const excludeRead = req.query.excludeRead !== 'false';
     const lang = parseLang(req.query.lang);
+    const readSlugs = req.user?.readArticles || [];
+    const excludeSlugsList = req.query.excludeSlugs
+      ? req.query.excludeSlugs.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+    const allExcludedSlugs = [...new Set([...(excludeRead ? readSlugs : []), ...excludeSlugsList])];
 
-    // Sort interest categories by score descending
-    const sortedCategories = Object.entries(userInterests)
-      .sort((a, b) => b[1] - a[1])
-      .map(entry => entry[0]);
+    const userInterests = req.user?.interests ? Object.fromEntries(req.user.interests) : {};
+    const hasInterests = Object.keys(userInterests).length > 0;
 
-    let recommendedPosts = [];
+    let candidatePosts = [];
 
-    if (sortedCategories.length > 0) {
-      // Find category documents to get their IDs
-      const categoryDocs = await Category.find({ slug: { $in: sortedCategories }, isActive: true });
-      const categoryIdMap = categoryDocs.reduce((acc, cat) => {
-        acc[cat.slug] = cat._id;
-        return acc;
-      }, {});
+    // Filter excluding already read/excluded articles if requested
+    const baseFilter = {
+      status: 'live',
+      deletedAt: null,
+      ...(lang ? { language: lang } : {}),
+      ...(allExcludedSlugs.length > 0 ? { slug: { $nin: allExcludedSlugs } } : {}),
+    };
 
-      // Build target IDs list in sorted order of interest
-      const sortedIds = sortedCategories
-        .map(slug => categoryIdMap[slug])
-        .filter(Boolean);
-
-      if (sortedIds.length > 0) {
-        // Query database excluding read articles
-        recommendedPosts = await Post.find({
-          status: 'live',
-          deletedAt: null,
-          slug: { $nin: readSlugs },
-          category: { $in: sortedIds },
-          ...(lang ? { language: lang } : {}),
-        })
-          .populate('author', 'name')
-          .populate('category', 'name slug')
-          .select('title slug excerpt featuredImage category author publishedAt readingTimeMinutes views isBreaking')
-          .limit(4)
-          .lean();
-
-        // Sort posts dynamically according to category interest weight
-        const idWeights = {};
-        sortedIds.forEach((id, idx) => {
-          idWeights[id.toString()] = idx;
-        });
-
-        recommendedPosts.sort((a, b) => {
-          const weightA = idWeights[a.category?._id?.toString()] ?? 999;
-          const weightB = idWeights[b.category?._id?.toString()] ?? 999;
-          return weightA - weightB;
-        });
-      }
-    }
-
-    // Backfill with general trending/recent posts if we have less than 4 recommendations
-    if (recommendedPosts.length < 4) {
-      const needed = 4 - recommendedPosts.length;
-      const existingIds = recommendedPosts.map(p => p._id);
-      
-      const backfill = await Post.find({
-        status: 'live',
-        deletedAt: null,
-        _id: { $nin: existingIds },
-        slug: { $nin: readSlugs },
-        ...(lang ? { language: lang } : {}),
+    if (hasInterests) {
+      // Pull recent candidate articles from the last 30 days
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const allCandidates = await Post.find({
+        ...baseFilter,
+        publishedAt: { $gte: thirtyDaysAgo },
       })
-        .sort({ views: -1, publishedAt: -1 })
-        .limit(needed)
         .populate('author', 'name')
-        .populate('category', 'name slug')
-        .select('title slug excerpt featuredImage category author publishedAt readingTimeMinutes views isBreaking')
+        .populate('category', 'name slug nameTranslations')
+        .populate('subCategory', 'name slug nameTranslations')
+        .select('title slug excerpt featuredImage category subCategory tags author publishedAt readingTimeMinutes views isBreaking language')
+        .limit(100)
         .lean();
 
-      recommendedPosts = [...recommendedPosts, ...backfill];
+      // Multi-factor hybrid ranking algorithm
+      const scoredPosts = allCandidates.map((post) => {
+        let score = 0;
+        const now = Date.now();
+        const publishedTime = new Date(post.publishedAt || post.createdAt).getTime();
+        const ageHours = (now - publishedTime) / (1000 * 60 * 60);
+
+        // 1. Category affinity match
+        if (post.category?.slug && userInterests[post.category.slug]) {
+          score += (userInterests[post.category.slug] || 0) * 3.5;
+        }
+
+        // 2. Subcategory affinity match
+        if (post.subCategory?.slug && userInterests[post.subCategory.slug]) {
+          score += (userInterests[post.subCategory.slug] || 0) * 4.0;
+        }
+
+        // 3. Topic Tag affinity match
+        if (Array.isArray(post.tags)) {
+          post.tags.forEach((tag) => {
+            const cleanTag = tag.trim().toLowerCase();
+            if (userInterests[cleanTag]) {
+              score += (userInterests[cleanTag] || 0) * 2.5;
+            }
+          });
+        }
+
+        // 4. Recency boost (Fresh news receives priority)
+        if (ageHours < 6) score += 12;
+        else if (ageHours < 24) score += 8;
+        else if (ageHours < 72) score += 4;
+        else if (ageHours < 168) score += 2;
+
+        // 5. Breaking news boost
+        if (post.isBreaking) score += 6;
+
+        // 6. Popularity logarithmic boost
+        const viewsCount = post.views || 0;
+        score += Math.log10(Math.max(1, viewsCount)) * 1.5;
+
+        return { ...post, recommendationScore: score };
+      });
+
+      // Sort by recommendationScore descending and slice by page
+      scoredPosts.sort((a, b) => b.recommendationScore - a.recommendationScore);
+      const offset = (page - 1) * limit;
+      candidatePosts = scoredPosts.slice(offset, offset + limit);
     }
 
-    res.json({ success: true, data: recommendedPosts });
+    // Backfill with top trending / recent articles if candidates are below requested limit
+    if (candidatePosts.length < limit) {
+      const needed = limit - candidatePosts.length;
+      const existingIds = candidatePosts.map((p) => p._id);
+      const skip = (page - 1) * limit;
+
+      const backfill = await Post.find({
+        ...baseFilter,
+        _id: { $nin: existingIds },
+      })
+        .sort({ isBreaking: -1, views: -1, publishedAt: -1 })
+        .skip(hasInterests ? 0 : skip)
+        .limit(needed)
+        .populate('author', 'name')
+        .populate('category', 'name slug nameTranslations')
+        .populate('subCategory', 'name slug nameTranslations')
+        .select('title slug excerpt featuredImage category subCategory tags author publishedAt readingTimeMinutes views isBreaking language')
+        .lean();
+
+      candidatePosts = [...candidatePosts, ...backfill];
+    }
+
+    const totalMatching = await Post.countDocuments(baseFilter);
+
+    res.json({
+      success: true,
+      algorithm: hasInterests ? 'hybrid_personalized_v2' : 'trending_curated_fallback',
+      personalized: hasInterests,
+      count: candidatePosts.length,
+      data: candidatePosts,
+      pagination: {
+        page,
+        limit,
+        hasMore: (page * limit) < totalMatching,
+      },
+    });
   } catch (error) {
     next(error);
   }

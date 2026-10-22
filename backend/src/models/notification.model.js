@@ -19,7 +19,7 @@ const notificationSchema = new mongoose.Schema(
     },
     relatedModel: {
       type: String,
-      enum: ['Post', 'User', 'Category', 'System'],
+      enum: ['Post', 'User', 'Category', 'System', 'ChatMessage'],
       required: true,
     },
     relatedId: {

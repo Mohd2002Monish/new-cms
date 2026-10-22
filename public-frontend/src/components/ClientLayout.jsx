@@ -3,14 +3,15 @@
 import { useState } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
-import Footer from './Footer';
 import AuthModal from './AuthModal';
+import ReactQueryProvider from './ReactQueryProvider';
 
 export default function ClientLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="app-container" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <ReactQueryProvider>
+      <div className="app-container" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <div className="app-layout" style={{ flex: 1 }}>
         <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
         
@@ -23,9 +24,8 @@ export default function ClientLayout({ children }) {
         </div>
       </div>
       
-      <Footer />
-      
       <AuthModal />
     </div>
+    </ReactQueryProvider>
   );
 }

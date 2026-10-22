@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 90" width="100%" height="100%">
+  <defs>
+    <!-- Facet 1: Left column front -->
+    <linearGradient id="facet1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF4B72"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+    <!-- Facet 2: Left column shadow crease -->
+    <linearGradient id="facet2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#DC2626"/>
+      <stop offset="100%" stop-color="#991B1B"/>
+    </linearGradient>
+    <!-- Facet 3: Diagonal bridge main -->
+    <linearGradient id="facet3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF3366"/>
+      <stop offset="60%" stop-color="#DC2626"/>
+      <stop offset="100%" stop-color="#B91C1C"/>
+    </linearGradient>
+    <!-- Facet 4: Diagonal highlight -->
+    <linearGradient id="facet4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFA8BA"/>
+      <stop offset="100%" stop-color="#FF4B72"/>
+    </linearGradient>
+    <!-- Facet 5: Right column -->
+    <linearGradient id="facet5" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF2E63"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Transparent Background: No rect tag -->
+
+  <!-- Left Emblem: 3D Origami Faceted 'N' -->
+  <g transform="translate(10, 8) scale(0.245)">
+    <!-- Left Column Left Plane -->
+    <polygon points="0,290 0,70 70,0 70,220" fill="url(#facet1)" />
+    <!-- Left Column Shadow Crease -->
+    <polygon points="70,0 70,220 120,290 120,70" fill="url(#facet2)" />
+    
+    <!-- Diagonal Bridge Front -->
+    <polygon points="70,0 215,220 145,290 0,70" fill="url(#facet3)" opacity="0.95" />
+    <!-- Diagonal Inner Facet Fold -->
+    <polygon points="70,0 145,290 120,290 70,220" fill="url(#facet4)" opacity="0.4" />
+    
+    <!-- Right Column Front -->
+    <polygon points="215,70 215,290 285,220 285,0" fill="url(#facet5)" />
+    <!-- Right Column Shadow Side -->
+    <polygon points="145,0 215,70 215,290 145,220" fill="url(#facet2)" />
+
+    <!-- Broadcast Signal Dot -->
+    <circle cx="285" cy="0" r="12" fill="#FF2E63" />
+  </g>
+
+  <!-- Typography -->
+  <!-- "News" in clean, bold high-contrast sans-serif -->
+  <text x="100" y="52" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="40" font-weight="900" letter-spacing="-1.2px" fill="currentColor">
+    News<tspan fill="#DC2626">Portal</tspan>
+  </text>
+
+  <!-- Refined Tagline -->
+  <text x="102" y="74" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10.5" font-weight="700" letter-spacing="2.8px" fill="#94A3B8">
+    GLOBAL JOURNALISM &amp; LIVE INSIGHTS
+  </text>
+</svg>

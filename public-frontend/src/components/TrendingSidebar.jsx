@@ -31,7 +31,7 @@ export default function TrendingSidebar({ articles = [] }) {
             return (
               <li key={article._id || article.slug}>
                 <Link
-                  href={`/articles/${article.slug}`}
+                  href={`/${article.language || 'en'}/articles/${encodeURIComponent(article.slug)}`}
                   className="trending-panel-item"
                   aria-label={`${index + 1}. ${article.title}`}
                 >

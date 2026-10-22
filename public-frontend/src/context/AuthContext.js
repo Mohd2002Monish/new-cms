@@ -10,26 +10,49 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authError, setAuthError] = useState('');
 
   // Initialize and check for existing token or session refresh
   const initializeAuth = useCallback(async () => {
     try {
+      // Check for Google OAuth callback token or error in URL query
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const googleToken = urlParams.get('google_token');
+        const errParam = urlParams.get('auth_error');
+
+        if (googleToken) {
+          localStorage.setItem('reader_token', googleToken);
+          // Clean token from URL bar
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        } else if (errParam) {
+          setAuthError(decodeURIComponent(errParam));
+          setAuthModalOpen(true);
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
+      }
+
       const storedToken = localStorage.getItem('reader_token');
       if (storedToken) {
-        // We have an access token, attempt a silent refresh to verify it's valid
-        // or just attempt to get user info if we had a profile endpoint.
-        // Let's use the refresh endpoint which doesn't require active Bearer token in headers.
-        const res = await api.post('/auth/refresh').catch(() => null);
-        if (res?.data?.success) {
-          localStorage.setItem('reader_token', res.data.data.accessToken);
-          setUser(res.data.data.user);
+        // Fetch current user profile with token
+        const profileRes = await api.get('/public/user/me').catch(() => null);
+        if (profileRes?.data?.success && profileRes.data.user) {
+          setUser(profileRes.data.user);
         } else {
-          // Token expired or refresh token invalid
-          localStorage.removeItem('reader_token');
-          setUser(null);
+          // If profile fails, attempt refresh
+          const res = await api.post('/auth/refresh').catch(() => null);
+          if (res?.data?.success) {
+            localStorage.setItem('reader_token', res.data.data.accessToken);
+            setUser(res.data.data.user);
+          } else {
+            localStorage.removeItem('reader_token');
+            setUser(null);
+          }
         }
-      } else {
-        // No token, but maybe we have a refresh cookie? Try refresh.
+      } else if (typeof document !== 'undefined' && document.cookie.includes('refreshToken')) {
+        // Only try refresh if a refreshToken cookie actually exists
         const res = await api.post('/auth/refresh').catch(() => null);
         if (res?.data?.success) {
           localStorage.setItem('reader_token', res.data.data.accessToken);
@@ -208,6 +231,54 @@ export function AuthProvider({ children }) {
   const openAuthModal = () => setAuthModalOpen(true);
   const closeAuthModal = () => setAuthModalOpen(false);
 
+  // One-Click Dev Login
+  const devLogin = async (role = 'reader') => {
+    setLoading(true);
+    try {
+      const res = await api.post('/auth/dev-login', { role });
+      if (res?.data?.success) {
+        localStorage.setItem('reader_token', res.data.data.accessToken);
+        setUser(res.data.data.user);
+        setAuthModalOpen(false);
+        return { success: true };
+      }
+      return { success: false, message: res?.data?.message || 'Dev login failed' };
+    } catch (err) {
+      return { success: false, message: err?.response?.data?.message || 'Dev login failed' };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Google OAuth Login / Register
+  const loginWithGoogle = async (googleData = {}) => {
+    setLoading(true);
+    try {
+      const res = await api.post('/public/auth/google', googleData);
+      if (res?.data?.success) {
+        localStorage.setItem('reader_token', res.data.data.accessToken);
+        setUser(res.data.data.user);
+        setAuthModalOpen(false);
+        return { success: true };
+      }
+      return { success: false, message: res?.data?.message || 'Google sign in failed' };
+    } catch (err) {
+      return { success: false, message: err?.response?.data?.message || 'Google sign in failed' };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch Google OAuth Config status
+  const getGoogleAuthConfig = async () => {
+    try {
+      const res = await api.get('/public/auth/google/config');
+      return res?.data?.data || { enabled: false, clientId: '' };
+    } catch {
+      return { enabled: false, clientId: '' };
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -216,9 +287,14 @@ export function AuthProvider({ children }) {
         authModalOpen,
         openAuthModal,
         closeAuthModal,
+        authError,
+        setAuthError,
         loginWithPassword,
         sendLoginOtp,
         loginWithOtp,
+        devLogin,
+        loginWithGoogle,
+        getGoogleAuthConfig,
         register,
         forgotPassword,
         resetPassword,

@@ -1,7 +1,9 @@
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import Joi from 'joi';
 import { User } from '../models/User.js';
 import { OtpLog } from '../models/OtpLog.js';
+import { SystemSetting } from '../models/SystemSetting.js';
 import { env } from '../config/env.js';
 import {
   generateOTP,
@@ -407,3 +409,285 @@ export const resetPassword = async (req, res, next) => {
     next(error);
   }
 };
+
+// ─── Google OAuth for Reader Portal ──────────────────────────────────────────
+
+/**
+ * GET /api/public/auth/google/config
+ * Returns public Google OAuth status and client ID
+ */
+export const getGoogleAuthConfig = async (req, res, next) => {
+  try {
+    const setting = await SystemSetting.findOne({ key: 'google_oauth' }).lean();
+    const config = setting?.value || {};
+    res.json({
+      success: true,
+      data: {
+        enabled: Boolean(config.enabled),
+        clientId: config.clientId || '',
+        allowReaderLogin: config.allowReaderLogin !== false,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/public/auth/google
+ * Sign in / Sign up with Google token, code, or profile
+ */
+export const googleAuth = async (req, res, next) => {
+  try {
+    const { credential, code, mockEmail, mockName } = req.body;
+    const setting = await SystemSetting.findOne({ key: 'google_oauth' }).lean();
+    const config = setting?.value || {};
+
+    let googleProfile = null;
+
+    if (credential) {
+      // Decode or verify Google ID token
+      try {
+        const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`);
+        if (verifyRes.ok) {
+          const tokenData = await verifyRes.json();
+          googleProfile = {
+            email: tokenData.email,
+            name: tokenData.name || tokenData.given_name || tokenData.email.split('@')[0],
+            sub: tokenData.sub,
+            picture: tokenData.picture,
+          };
+        }
+      } catch (err) {
+        console.error('Error verifying Google ID token:', err.message);
+      }
+    } else if (code) {
+      // Exchange authorization code
+      try {
+        const redirectUri = config.redirectUri || `${req.protocol}://${req.get('host')}/api/public/auth/google/callback`;
+        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            code,
+            client_id: config.clientId,
+            client_secret: config.clientSecret,
+            redirect_uri: redirectUri,
+            grant_type: 'authorization_code',
+          }),
+        });
+
+        if (tokenRes.ok) {
+          const tokenData = await tokenRes.json();
+          const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${tokenData.access_token}` },
+          });
+          if (userRes.ok) {
+            const userData = await userRes.json();
+            googleProfile = {
+              email: userData.email,
+              name: userData.name || userData.email.split('@')[0],
+              sub: userData.sub,
+              picture: userData.picture,
+            };
+          }
+        }
+      } catch (err) {
+        console.error('Error exchanging Google code:', err.message);
+      }
+    } else if (mockEmail && env.NODE_ENV !== 'production') {
+      // Development mock helper
+      googleProfile = {
+        email: mockEmail.toLowerCase(),
+        name: mockName || 'Google User',
+        sub: 'mock-google-id-' + Date.now(),
+      };
+    }
+
+    if (!googleProfile || !googleProfile.email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Google authentication failed. Please configure Client ID or verify credentials.',
+      });
+    }
+
+    // Find or create reader
+    let user = await User.findOne({ email: googleProfile.email.toLowerCase() });
+
+    if (user) {
+      if (user.status === 'inactive') {
+        return res.status(403).json({
+          success: false,
+          message: 'Your account has been deactivated. Please contact support.',
+        });
+      }
+    } else {
+      // Check if reader registration is allowed
+      if (config.allowReaderLogin === false) {
+        return res.status(403).json({
+          success: false,
+          message: 'Reader registration via Google is currently disabled.',
+        });
+      }
+
+      user = await User.create({
+        name: googleProfile.name || googleProfile.email.split('@')[0],
+        email: googleProfile.email.toLowerCase(),
+        password: crypto.randomBytes(24).toString('hex'),
+        role: 'reader',
+        status: 'active',
+      });
+
+      await audit.log({
+        req,
+        action: 'READER_REGISTERED_GOOGLE',
+        targetType: 'User',
+        targetId: user._id,
+        targetLabel: user.name,
+      });
+    }
+
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json({
+      success: true,
+      message: 'Signed in with Google successfully!',
+      data: {
+        accessToken,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          status: user.status,
+          readingStreak: user.readingStreak || 0,
+          lastReadDate: user.lastReadDate || null,
+          trackingEnabled: user.trackingEnabled !== false,
+          bookmarks: user.bookmarks || [],
+          isPremiumUser: user.isPremiumUser === true,
+          monthlyViewsCount: user.monthlyViewsCount || 0,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const resolvePortalUrl = (req) => {
+  const referer = req.get('referer') || req.get('origin');
+  if (referer) {
+    try {
+      const u = new URL(referer);
+      return `${u.protocol}//${u.host}`;
+    } catch {}
+  }
+  return process.env.PUBLIC_FRONTEND_URL || 'http://localhost:3001';
+};
+
+/**
+ * GET /api/public/auth/google/redirect
+ * Redirect browser to Google OAuth consent screen
+ */
+export const googleRedirect = async (req, res, next) => {
+  try {
+    const setting = await SystemSetting.findOne({ key: 'google_oauth' }).lean();
+    const config = setting?.value || {};
+    const portalUrl = resolvePortalUrl(req);
+
+    if (!config.enabled || !config.clientId) {
+      return res.redirect(`${portalUrl}?auth_error=${encodeURIComponent('Google OAuth is not configured or disabled in Admin Settings.')}`);
+    }
+
+    const callbackUrl = config.redirectUri || `${req.protocol}://${req.get('host')}/api/public/auth/google/callback`;
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${config.clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code&scope=openid%20email%20profile&prompt=select_account&state=${encodeURIComponent(portalUrl)}`;
+
+    res.redirect(googleAuthUrl);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/public/auth/google/callback
+ * Handle redirect callback from Google OAuth
+ */
+export const googleCallback = async (req, res, next) => {
+  try {
+    const { code, error, state } = req.query;
+    const portalUrl = state ? decodeURIComponent(state) : (process.env.PUBLIC_FRONTEND_URL || 'http://localhost:3001');
+
+    if (error || !code) {
+      return res.redirect(`${portalUrl}?auth_error=${encodeURIComponent(error || 'Google login cancelled')}`);
+    }
+
+    const setting = await SystemSetting.findOne({ key: 'google_oauth' }).lean();
+    const config = setting?.value || {};
+    const callbackUrl = config.redirectUri || `${req.protocol}://${req.get('host')}/api/public/auth/google/callback`;
+
+    // Exchange code for tokens
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: config.clientId,
+        client_secret: config.clientSecret,
+        redirect_uri: callbackUrl,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    if (!tokenRes.ok) {
+      return res.redirect(`${portalUrl}?auth_error=${encodeURIComponent('Failed to exchange Google OAuth code')}`);
+    }
+
+    const tokenData = await tokenRes.json();
+    const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+
+    if (!userRes.ok) {
+      return res.redirect(`${portalUrl}?auth_error=${encodeURIComponent('Failed to fetch Google profile')}`);
+    }
+
+    const userData = await userRes.json();
+    const email = userData.email.toLowerCase();
+
+    let user = await User.findOne({ email });
+    if (!user) {
+      user = await User.create({
+        name: userData.name || email.split('@')[0],
+        email,
+        password: crypto.randomBytes(24).toString('hex'),
+        role: 'reader',
+        status: 'active',
+      });
+    }
+
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.redirect(`${portalUrl}?google_token=${accessToken}&google_name=${encodeURIComponent(user.name)}`);
+  } catch (err) {
+    console.error('Google callback error:', err);
+    const portalUrl = process.env.PUBLIC_FRONTEND_URL || 'http://localhost:3000';
+    res.redirect(`${portalUrl}?auth_error=${encodeURIComponent(err.message)}`);
+  }
+};
+

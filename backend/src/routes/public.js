@@ -17,6 +17,7 @@ import {
   updateReadArticles,
   updateInterests,
   getArticleRecommendations,
+  trackInteraction,
   toggleUserBookmark,
   getUserBookmarks,
   syncAllUserBookmarks,
@@ -35,6 +36,10 @@ import {
   loginOtp,
   forgotPassword,
   resetPassword,
+  getGoogleAuthConfig,
+  googleAuth,
+  googleRedirect,
+  googleCallback,
   readerRegisterSchema,
   readerLoginPasswordSchema,
   readerSendOtpSchema,
@@ -43,39 +48,40 @@ import {
   readerResetPasswordSchema,
 } from '../controllers/publicAuth.controller.js';
 import { validate } from '../middleware/validate.js';
-import { authenticate } from '../middleware/authenticate.js';
+import { authenticate, optionalAuthenticate } from '../middleware/authenticate.js';
 import { otpRequestLimiter, otpVerifyLimiter } from '../middleware/rateLimiter.js';
+import { synthesizeAudio, getTtsLanguages } from '../controllers/tts.controller.js';
+
+import { cacheRoute } from '../services/cache.service.js';
 
 const router = Router();
 
-// ─── Cache Middleware ─────────────────────────────────────────────────────────
-// Set Cache-Control headers for all public GET requests to improve Core Web Vitals
-router.use((req, res, next) => {
-  if (req.method === 'GET') {
-    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
-  }
-  next();
-});
+// ─── Text to Speech (TTS) ──────────────────────────────────────────────────────
+router.post('/tts/synthesize', synthesizeAudio);
+router.get('/tts/languages', getTtsLanguages);
 
 // ─── Search ───────────────────────────────────────────────────────────────────
 // GET  /api/public/search  ← MUST be before /:slug routes
-router.get('/search', searchArticles);
+router.get('/search', cacheRoute(30), searchArticles);
 
 // ─── Articles ─────────────────────────────────────────────────────────────────
 // GET  /api/public/articles
-router.get('/articles', getPublicArticles);
+router.get('/articles', cacheRoute(60), getPublicArticles);
 
 // GET  /api/public/articles/trending  ← MUST be before /:slug to avoid conflict
-router.get('/articles/trending', getTrendingArticles);
+router.get('/articles/trending', cacheRoute(60), getTrendingArticles);
 
 // GET  /api/public/articles/breaking  ← MUST be before /:slug
-router.get('/articles/breaking', getBreakingArticles);
+router.get('/articles/breaking', cacheRoute(30), getBreakingArticles);
+
+// GET  /api/public/articles/recommendations  ← MUST be before /:slug to avoid conflict
+router.get('/articles/recommendations', optionalAuthenticate, getArticleRecommendations);
 
 // GET  /api/public/articles/:slug
-router.get('/articles/:slug', getPublicArticleBySlug);
+router.get('/articles/:slug', cacheRoute(60), getPublicArticleBySlug);
 
 // GET  /api/public/articles/:slug/related
-router.get('/articles/:slug/related', getRelatedArticles);
+router.get('/articles/:slug/related', cacheRoute(120), getRelatedArticles);
 
 // POST /api/public/articles/:slug/view
 router.post('/articles/:slug/view', incrementArticleView);
@@ -94,11 +100,11 @@ router.post('/articles/:slug/comments', addArticleComment);
 
 // ─── Categories ───────────────────────────────────────────────────────────────
 // GET  /api/public/categories
-router.get('/categories', getPublicCategories);
+router.get('/categories', cacheRoute(300), getPublicCategories);
 
 // ─── Tags ─────────────────────────────────────────────────────────────────────
 // GET  /api/public/tags
-router.get('/tags', getPublicTags);
+router.get('/tags', cacheRoute(300), getPublicTags);
 
 // ─── Sitemap Data ─────────────────────────────────────────────────────────────
 // GET  /api/public/sitemap-data
@@ -113,10 +119,16 @@ router.post('/auth/login-otp', otpVerifyLimiter, validate(readerLoginOtpSchema),
 router.post('/auth/forgot-password', otpRequestLimiter, validate(readerForgotPasswordSchema), forgotPassword);
 router.post('/auth/reset-password', otpVerifyLimiter, validate(readerResetPasswordSchema), resetPassword);
 
-// ─── Reader Preferences & recommendations ──────────────────────────────────────
+// ─── Google OAuth Routes ───────────────────────────────────────────────────────
+router.get('/auth/google/config', getGoogleAuthConfig);
+router.post('/auth/google', googleAuth);
+router.get('/auth/google/redirect', googleRedirect);
+router.get('/auth/google/callback', googleCallback);
+
+// ─── Reader Preferences ──────────────────────────────────────────────────────────
+router.post('/track-interaction', optionalAuthenticate, trackInteraction);
 router.post('/user/read-articles', authenticate, updateReadArticles);
 router.post('/user/interests', authenticate, updateInterests);
-router.get('/articles/recommendations', authenticate, getArticleRecommendations);
 
 // ─── Reader Bookmarks sync ─────────────────────────────────────────────────────
 router.post('/user/bookmarks', authenticate, toggleUserBookmark);

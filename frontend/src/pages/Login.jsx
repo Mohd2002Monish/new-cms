@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
-import { loginUser, clearError, selectAuth } from '../features/auth/authSlice.js';
+import { loginUser, devLoginUser, clearError, selectAuth } from '../features/auth/authSlice.js';
 
 export default function Login() {
   const dispatch = useDispatch();
@@ -118,6 +118,49 @@ export default function Login() {
               )}
             </button>
           </form>
+
+          {/* ─── One-Click Dev Login ───────────────────────────────────────── */}
+          <div className="mt-6 pt-5 border-t border-slate-200">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-600 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                Dev 1-Click Login
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">Bypasses OTP</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                id="dev-login-admin"
+                disabled={loading}
+                onClick={() => dispatch(devLoginUser('admin'))}
+                className="py-2.5 px-2 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl text-xs font-bold transition flex flex-col items-center gap-1 shadow-sm active:scale-95 disabled:opacity-60"
+              >
+                <span className="text-base">👑</span>
+                <span>Admin</span>
+              </button>
+              <button
+                type="button"
+                id="dev-login-manager"
+                disabled={loading}
+                onClick={() => dispatch(devLoginUser('manager'))}
+                className="py-2.5 px-2 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-xl text-xs font-bold transition flex flex-col items-center gap-1 shadow-sm active:scale-95 disabled:opacity-60"
+              >
+                <span className="text-base">💼</span>
+                <span>Manager</span>
+              </button>
+              <button
+                type="button"
+                id="dev-login-editor"
+                disabled={loading}
+                onClick={() => dispatch(devLoginUser('editor'))}
+                className="py-2.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition flex flex-col items-center gap-1 shadow-sm active:scale-95 disabled:opacity-60"
+              >
+                <span className="text-base">✍️</span>
+                <span>Editor</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <p className="text-center text-xs text-slate-400 mt-6">

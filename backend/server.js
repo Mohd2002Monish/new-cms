@@ -4,9 +4,11 @@ import { env } from './src/config/env.js';
 import { connectDB } from './src/config/db.js';
 import { startCronJobs } from './src/services/cron.service.js';
 import { initSocket } from './src/services/socket.service.js';
+import { getRedisClient } from './src/config/redis.js';
 
-// Connect Database
+// Connect Database & Cache
 connectDB();
+getRedisClient();
 
 const PORT = env.PORT || 5000;
 

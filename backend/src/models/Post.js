@@ -95,6 +95,11 @@ const postSchema = new mongoose.Schema({
     ref: 'Category',
     default: null,
   },
+  subCategory: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Category',
+    default: null,
+  },
   tags: [{ type: String, trim: true, lowercase: true }],
   embeds: [embedSchema],
   status: {

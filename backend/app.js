@@ -18,6 +18,8 @@ import notificationRoutes from './src/routes/notifications.js';
 import reportRoutes from './src/routes/reports.js';
 import publicRoutes from './src/routes/public.js';
 import aiRoutes from './src/routes/ai.js';
+import chatRoutes from './src/routes/chat.js';
+import settingsRoutes from './src/routes/settings.js';
 import { globalApiLimiter } from './src/middleware/rateLimiter.js';
 
 const app = express();
@@ -35,17 +37,30 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 
+import logger from './src/services/logger.service.js';
+
 // Middlewares
 // Allowed origins: admin panel (Vite) + public portal (Next.js)
 const allowedOrigins = [
-  process.env.CLIENT_URL         || 'http://localhost:5173', // Admin panel
+  process.env.CLIENT_URL || 'http://localhost:5173', // Admin panel
   process.env.PUBLIC_FRONTEND_URL || 'http://localhost:3000', // Public portal
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+  'http://127.0.0.1:5173',
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (e.g., curl, Postman, same-origin SSR)
-    if (!origin || allowedOrigins.includes(origin)) {
+    // or allowed origins, or any localhost / 127.0.0.1 port in development
+    if (
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      (env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))
+    ) {
       callback(null, true);
     } else {
       callback(new Error(`CORS: origin '${origin}' not allowed`));
@@ -53,6 +68,17 @@ app.use(cors({
   },
   credentials: true,
 }));
+
+// Request timing & file logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    logger.http(req, res, duration);
+  });
+  next();
+});
+
 app.use(express.json({ limit: '10mb' })); // Allow larger payloads for Tiptap JSON content
 app.use(cookieParser());
 // Strip $-prefixed keys and dots from user input to block NoSQL operator injection
@@ -77,6 +103,8 @@ app.use('/api/admin/audit-logs',  auditLogRoutes);
 app.use('/api/admin/rate-limits', rateLimitRoutes);
 app.use('/api/admin/reports',     reportRoutes);
 app.use('/api/admin/ai',          aiRoutes);
+app.use('/api/admin/settings',    settingsRoutes);
+app.use('/api/chat',              chatRoutes);
 
 // Public routes — no authentication required
 app.use('/api/public', publicRoutes);
@@ -90,6 +118,9 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error(err.stack);
   const status = err.status || 500;
+  const user = req.user ? `${req.user.email} (${req.user.role})` : 'guest';
+  logger.error(`[${req.method} ${req.originalUrl || req.url}] status:${status} user:${user} - ${err.message}`, err);
+
   // Never leak internal error details (stack-adjacent messages) in production
   const message =
     status < 500 || env.NODE_ENV !== 'production'

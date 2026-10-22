@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import { env } from '../config/env.js';
 
+import { SystemSetting } from '../models/SystemSetting.js';
+
 // Generate random 6-digit string.
 // The static dev OTP requires an explicit opt-in AND is hard-disabled in production.
 export const generateOTP = () => {
@@ -12,10 +14,21 @@ export const generateOTP = () => {
   return crypto.randomInt(100000, 1000000).toString();
 };
 
-// Send OTP via Email (Nodemailer setup)
+// Send OTP via Email (Nodemailer setup with dynamic DB configuration)
 export const sendOTPEmail = async (email, otp) => {
   try {
-    const isConfigured = env.SMTP_USER && env.SMTP_PASS;
+    // Check dynamic settings in DB first, fallback to environment
+    const dbSmtp = await SystemSetting.getSetting('smtp', null);
+    const host = dbSmtp?.host || env.SMTP_HOST || 'smtp.gmail.com';
+    const port = Number(dbSmtp?.port || env.SMTP_PORT) || 587;
+    const secure = dbSmtp?.secure !== undefined ? Boolean(dbSmtp.secure) : (port === 465);
+    const user = dbSmtp?.user || env.SMTP_USER;
+    const pass = dbSmtp?.pass || env.SMTP_PASS;
+    const from = dbSmtp?.fromEmail
+      ? (dbSmtp.fromName ? `"${dbSmtp.fromName}" <${dbSmtp.fromEmail}>` : dbSmtp.fromEmail)
+      : (env.EMAIL_FROM || 'noreply@newscms.com');
+
+    const isConfigured = user && pass;
 
     if (!isConfigured) {
       if (env.NODE_ENV === 'production') {
@@ -27,17 +40,17 @@ export const sendOTPEmail = async (email, otp) => {
     }
 
     const transporter = nodemailer.createTransport({
-      host: env.SMTP_HOST || 'smtp.gmail.com',
-      port: Number(env.SMTP_PORT) || 587,
-      secure: Number(env.SMTP_PORT) === 465,
+      host,
+      port,
+      secure,
       auth: {
-        user: env.SMTP_USER,
-        pass: env.SMTP_PASS,
+        user,
+        pass,
       },
     });
 
     const mailOptions = {
-      from: env.EMAIL_FROM || 'noreply@newscms.com',
+      from,
       to: email,
       subject: 'News CMS - Login Verification OTP',
       text: `Your 2-Factor Authentication OTP code is: ${otp}. It will expire in 5 minutes.`,

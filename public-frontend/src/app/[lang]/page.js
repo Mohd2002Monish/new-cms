@@ -5,6 +5,7 @@ import CategoryRail from '@/components/CategoryRail';
 import TrendingSidebar from '@/components/TrendingSidebar';
 import NewsletterBox from '@/components/NewsletterBox';
 import ForYouRail from '@/components/ForYouRail';
+import InfiniteNewsFeed from '@/components/InfiniteNewsFeed';
 import { Newspaper } from 'lucide-react';
 
 import { getDictionary, hasLocale } from '@/i18n/dictionaries';
@@ -31,15 +32,22 @@ async function fetchAll(lang) {
   const trending =
     trendingRes.status === 'fulfilled' ? trendingRes.value?.data || [] : [];
 
-  // Fetch 3 articles per category in parallel
+  // Fetch 3 articles per main category in parallel (exclude standalone rails for subcategories)
+  const mainCategories = categories.filter((cat) => !cat.parentCategory);
+
   const categoryArticlesResults = await Promise.allSettled(
-    categories.map((cat) =>
+    mainCategories.map((cat) =>
       publicApi.getArticlesByCategory(cat.slug, { limit: 3, sort: 'latest', lang })
     )
   );
 
-  const categoryArticles = categories.map((cat, idx) => ({
-    category: cat,
+  const categoryArticles = mainCategories.map((cat, idx) => ({
+    category: {
+      ...cat,
+      subcategories: categories.filter(
+        (c) => (c.parentCategory?._id || c.parentCategory) === cat._id
+      ),
+    },
     articles:
       categoryArticlesResults[idx].status === 'fulfilled'
         ? categoryArticlesResults[idx].value?.data || []
@@ -57,6 +65,11 @@ export default async function HomePage({ params }) {
   const dict = getDictionary(lang);
   const { trending, categories, categoryArticles } = await fetchAll(lang);
 
+  // Collect the top 3 latest article slugs from each category rail to exclude them from the infinite feed
+  const railExcludedSlugs = categoryArticles
+    .flatMap(({ articles }) => articles.map((a) => a.slug))
+    .filter(Boolean);
+
   return (
     <>
       {/* ── Hero Slider ─────────────────────────────────────────────────── */}
@@ -68,7 +81,7 @@ export default async function HomePage({ params }) {
       {/* ── Main two-column layout ───────────────────────────────────────── */}
       <div className="dashboard-layout">
 
-        {/* ── Left column: category rails ─────────────────────────────── */}
+        {/* ── Left column: category rails + infinite feed ──────────────── */}
         <div className="category-rails-area">
           <ForYouRail />
 
@@ -93,6 +106,9 @@ export default async function HomePage({ params }) {
               <p style={{ fontWeight: 600 }}>{dict.noArticlesYet}</p>
             </div>
           )}
+
+          {/* ── Infinite Scrolling News Feed ── */}
+          <InfiniteNewsFeed initialExcludedSlugs={railExcludedSlugs} lang={lang} />
         </div>
 
         {/* ── Right column: trending + newsletter ─────────────────────── */}

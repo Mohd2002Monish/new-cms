@@ -39,41 +39,63 @@ async function getArticle(slug) {
   }
 }
 
-// ─── Dynamic metadata (SSR, picked up by Google News) ─────────────────────────
+// ─── Dynamic metadata (SSR, picked up by Google News & Social Networks) ──────
 
 export async function generateMetadata({ params }) {
   const { lang, slug } = await params;
   const article = await getArticle(slug);
-  if (!article) return { title: 'Article Not Found' };
+  if (!article) return { title: 'Article Not Found | NewsPortal' };
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-  const canonicalUrl = article.seo?.canonicalUrl || `${siteUrl}/${lang}/articles/${slug}`;
-  const ogImage = article.seo?.ogImage || article.featuredImage?.url || '';
+  const canonicalUrl = article.seo?.canonicalUrl || `${siteUrl}/${lang}/articles/${encodeURIComponent(slug)}`;
+  const articlePicture = article.seo?.ogImage || article.featuredImage?.url || '';
+
+  const metaTitle = article.seo?.metaTitle || article.title;
+  const metaDescription = article.seo?.metaDescription || article.excerpt;
+  const categoryLabel = (lang !== 'en' && article.category?.nameTranslations?.[lang]) || article.category?.name || 'News';
+
+  const defaultOgImage = `${siteUrl}/logo-landscape.jpg`;
+  const socialImageUrl = articlePicture
+    ? buildImageUrl(articlePicture, { width: 1200, format: 'webp' })
+    : defaultOgImage;
 
   return {
-    title: article.seo?.metaTitle || article.title,
-    description: article.seo?.metaDescription || article.excerpt,
+    title: metaTitle,
+    description: metaDescription,
+    keywords: article.tags?.length > 0 ? article.tags.join(', ') : `${categoryLabel}, news, updates`,
     alternates: {
       canonical: canonicalUrl,
       languages: buildLanguageAlternates(article, siteUrl),
     },
-    robots: article.seo?.noIndex ? 'noindex,nofollow' : 'index,follow',
+    robots: article.seo?.noIndex ? 'noindex,nofollow' : 'index,follow,max-image-preview:large',
     openGraph: {
       type: 'article',
+      siteName: 'NewsPortal',
+      locale: lang === 'hi' ? 'hi_IN' : lang === 'gu' ? 'gu_IN' : 'en_US',
       title: article.seo?.ogTitle || article.title,
-      description: article.seo?.ogDescription || article.seo?.metaDescription || article.excerpt,
+      description: article.seo?.ogDescription || metaDescription,
       url: canonicalUrl,
-      images: ogImage ? [{ url: buildImageUrl(ogImage, { width: 1200, format: 'webp' }) }] : [],
+      images: [
+        {
+          url: socialImageUrl,
+          width: 1200,
+          height: 630,
+          alt: article.featuredImage?.alt || article.title,
+        },
+      ],
       publishedTime: article.publishedAt,
       modifiedTime:  article.updatedAt,
-      authors:       article.author?.name ? [article.author.name] : [],
-      section:       article.category?.name || '',
+      authors:       article.author?.name ? [article.author.name] : ['NewsPortal Editorial'],
+      section:       categoryLabel,
+      tags:          article.tags || [],
     },
     twitter: {
       card: 'summary_large_image',
+      site: '@NewsPortal',
+      creator: article.author?.name ? `@${article.author.name.replace(/\s+/g, '')}` : '@NewsPortal',
       title: article.seo?.ogTitle || article.title,
-      description: article.seo?.ogDescription || article.seo?.metaDescription || article.excerpt,
-      images: ogImage ? [buildImageUrl(ogImage, { width: 1200, format: 'webp' })] : [],
+      description: article.seo?.ogDescription || metaDescription,
+      images: [socialImageUrl],
     },
   };
 }
@@ -200,9 +222,9 @@ export default async function ArticlePage({ params }) {
             {/* H1 — one per page (SEO requirement) */}
             <h1 className="article-title">{article.title}</h1>
 
-            {/* Sub-heading (Excerpt) */}
-            {article.excerpt && (
-              <p className="article-subtitle">{article.excerpt}</p>
+            {/* Sub-heading (Excerpt / Subtitle) */}
+            {(article.excerpt || article.seo?.metaDescription) && (
+              <p className="article-subtitle">{article.excerpt || article.seo?.metaDescription}</p>
             )}
 
             {/* Meta row */}

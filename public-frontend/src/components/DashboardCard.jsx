@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
+import { usePathname } from 'next/navigation';
 import { Clock, Monitor, TrendingUp, Film, Trophy, Landmark, Newspaper } from 'lucide-react';
 import { timeAgo, buildImageUrl } from '@/lib/utils';
 import { useBookmarks } from '@/hooks/useBookmarks';
@@ -37,6 +38,10 @@ function getBadge(article) {
  * @param {boolean} priority — for LCP image optimisation
  */
 export default function DashboardCard({ article, priority = false }) {
+  const pathname = usePathname();
+  const segment = pathname?.split('/')[1];
+  const lang = ['en', 'hi', 'gu'].includes(segment) ? segment : 'en';
+
   if (!article) return null;
 
   const { slug, title, featuredImage, category, publishedAt, views } = article;
@@ -47,10 +52,14 @@ export default function DashboardCard({ article, priority = false }) {
   const { user, openAuthModal } = useAuth();
   const isBookmarked = isBookmarkedFn(slug);
 
+  const articleHref = `/${lang}/articles/${encodeURIComponent(slug)}`;
+  const categoryHref = `/${lang}/category/${category?.slug || ''}`;
+  const categoryLabel = category?.nameTranslations?.[lang] || category?.localizedName || category?.name;
+
   return (
     <article className="dashboard-card">
       {/* ── Image area ── */}
-      <Link href={`/articles/${slug}`} tabIndex={-1} aria-hidden="true">
+      <Link href={articleHref} tabIndex={-1} aria-hidden="true">
         <div className="dashboard-card-image">
           {imageUrl ? (
             <Image
@@ -105,13 +114,13 @@ export default function DashboardCard({ article, priority = false }) {
       <div className="dashboard-card-body">
         {/* Category label */}
         {category?.name && (
-          <Link href={`/category/${category.slug}`} className="dashboard-card-cat">
-            {category.name}
+          <Link href={categoryHref} className="dashboard-card-cat">
+            {categoryLabel}
           </Link>
         )}
 
         {/* Title */}
-        <Link href={`/articles/${slug}`}>
+        <Link href={articleHref}>
           <h3 className="dashboard-card-title">{title}</h3>
         </Link>
 

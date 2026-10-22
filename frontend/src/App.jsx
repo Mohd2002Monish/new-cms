@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Provider, useDispatch } from 'react-redux';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { store } from './app/store.js';
+import { queryClient } from './app/queryClient.js';
 import { bootstrapSession } from './features/auth/authSlice.js';
 
 import ProtectedRoute from './components/ProtectedRoute.jsx';
@@ -13,15 +15,17 @@ import Dashboard from './pages/Dashboard.jsx';
 import PostList from './pages/PostList.jsx';
 import PostEditor from './pages/PostEditor.jsx';
 import Categories from './pages/Categories.jsx';
-import UserManagement from './pages/UserManagement.jsx';
+import EmployeesPage from './pages/EmployeesPage.jsx';
+import ReadersPage from './pages/ReadersPage.jsx';
+import SettingsPage from './pages/SettingsPage.jsx';
 import Permissions from './pages/Permissions.jsx';
 import AuditLogs from './pages/AuditLogs.jsx';
 import RateLimits from './pages/RateLimits.jsx';
 import Notifications from './pages/Notifications.jsx';
 import MediaLibraryPage from './pages/MediaLibraryPage.jsx';
 import Reports from './pages/Reports.jsx';
-
 import SliderManager from './pages/SliderManager.jsx';
+import ChatPage from './pages/ChatPage.jsx';
 
 // ─── Inner component that runs bootstrap after store is available ─────────────
 function AppRoutes() {
@@ -57,6 +61,9 @@ function AppRoutes() {
         {/* Media Library */}
         <Route path="media" element={<MediaLibraryPage />} />
 
+        {/* Newsroom Chat */}
+        <Route path="chat" element={<ChatPage />} />
+
         {/* Categories – Admin only */}
         <Route
           path="categories"
@@ -77,12 +84,35 @@ function AppRoutes() {
           }
         />
 
-        {/* Users – Admin & Manager */}
+        {/* Staff & Employees – Admin & Manager */}
         <Route
-          path="users"
+          path="employees"
           element={
             <ProtectedRoute allowedRoles={['admin', 'manager']}>
-              <UserManagement />
+              <EmployeesPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Portal Users & Readers – Admin & Manager */}
+        <Route
+          path="readers"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'manager']}>
+              <ReadersPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Backwards compatibility for /users */}
+        <Route path="users" element={<Navigate to="/employees" replace />} />
+
+        {/* Settings – Admin only */}
+        <Route
+          path="admin/settings"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <SettingsPage />
             </ProtectedRoute>
           }
         />
@@ -140,9 +170,11 @@ function AppRoutes() {
 function App() {
   return (
     <Provider store={store}>
-      <Router>
-        <AppRoutes />
-      </Router>
+      <QueryClientProvider client={queryClient}>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </QueryClientProvider>
     </Provider>
   );
 }

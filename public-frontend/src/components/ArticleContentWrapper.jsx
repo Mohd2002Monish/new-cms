@@ -270,7 +270,12 @@ export default function ArticleContentWrapper({ initialArticle }) {
     <>
       {/* Audio Player */}
       {article.content && (
-        <AudioPlayer text={extractTextFromTiptapJSON(article.content)} />
+        <AudioPlayer
+          text={extractTextFromTiptapJSON(article.content)}
+          language={article.language || 'en'}
+          articleId={article._id || article.slug}
+          title={article.title}
+        />
       )}
 
       {/* Article body */}

@@ -15,8 +15,17 @@ const GRID_PAGE_SIZE = 9;
 async function getCategory(slug, lang) {
   try {
     const res = await publicApi.getCategories({ lang });
-    return res.data?.find(c => c.slug === slug) || null;
-  } catch { return null; }
+    const decodedSlug = decodeURIComponent(slug).toLowerCase();
+    return (
+      res.data?.find((c) => 
+        c.slug?.toLowerCase() === decodedSlug ||
+        c.slug?.toLowerCase() === decodedSlug.replace(/_/g, '-') ||
+        c.name?.toLowerCase().replace(/\s+/g, '-') === decodedSlug
+      ) || null
+    );
+  } catch {
+    return null;
+  }
 }
 
 async function fetchCategoryData(slug, lang) {
@@ -38,13 +47,11 @@ async function fetchCategoryData(slug, lang) {
 export async function generateMetadata({ params }) {
   const { lang, slug } = await params;
   const category = await getCategory(slug, lang);
-  if (!category) return { title: 'Category Not Found' };
-
-  const name = category.localizedName || category.name;
+  const name = category?.localizedName || category?.name || decodeURIComponent(slug).replace(/[-_]+/g, ' ');
   return {
     title: `${name} — Latest News`,
     description:
-      category.description ||
+      category?.description ||
       `Browse the latest ${name} news, stories and analysis on NewsPortal.`,
   };
 }
@@ -59,11 +66,17 @@ export default async function CategoryPage({ params }) {
     fetchCategoryData(slug, lang),
   ]);
 
-  if (!category) notFound();
+  // Fallback category if not yet in pre-seeded list
+  const activeCategory = category || {
+    name: decodeURIComponent(slug).replace(/[-_]+/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+    localizedName: decodeURIComponent(slug).replace(/[-_]+/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+    slug: slug,
+    description: `Browse latest stories in ${decodeURIComponent(slug).replace(/[-_]+/g, ' ')}`,
+  };
 
   const gridArticles = grid.data            || [];
   const gridTotal    = grid.pagination?.total || 0;
-  const categoryName = category.localizedName || category.name;
+  const categoryName = activeCategory.localizedName || activeCategory.name;
 
   return (
     <div style={{ paddingTop: 'var(--space-8)', paddingBottom: 'var(--space-16)' }}>
@@ -94,7 +107,7 @@ export default async function CategoryPage({ params }) {
                   '@type': 'ListItem',
                   position: 2,
                   name: categoryName,
-                  item: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/${lang}/category/${category.slug}`
+                  item: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/${lang}/category/${activeCategory.slug}`
                 }
               ]
             })
@@ -119,9 +132,9 @@ export default async function CategoryPage({ params }) {
           >
             {categoryName}
           </h1>
-          {category.description && (
+          {activeCategory.description && (
             <p style={{ color: 'var(--color-text-muted)', maxWidth: '48rem', lineHeight: 1.6 }}>
-              {category.description}
+              {activeCategory.description}
             </p>
           )}
           {gridTotal > 0 && (

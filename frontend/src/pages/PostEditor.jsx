@@ -627,6 +627,23 @@ export default function PostEditor() {
   const [writerPrompt, setWriterPrompt] = useState('');
   const [writingArticle, setWritingArticle] = useState(false);
   const [writerError, setWriterError] = useState('');
+  const [writerTab, setWriterTab] = useState('prompt'); // 'prompt' | 'history'
+  const [promptHistory, setPromptHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const fetchPromptHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const res = await api.get('/admin/ai/prompts?limit=20');
+      if (res.data?.success) {
+        setPromptHistory(res.data.data || []);
+      }
+    } catch (err) {
+      console.error('Failed to load prompt history', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   // AI Magic Edit Modal
   const [showAiEditModal, setShowAiEditModal] = useState(false);
@@ -645,6 +662,7 @@ export default function PostEditor() {
     excerpt: '',
     language: 'en',
     category: '',
+    subCategory: '',
     tags: '',
     coAuthors: [],
     featuredImageUrl: '',
@@ -709,6 +727,7 @@ export default function PostEditor() {
             excerpt: p.excerpt || '',
             language: p.language || 'en',
             category: p.category?._id || '',
+            subCategory: p.subCategory?._id || '',
             tags: (p.tags || []).join(', '),
             coAuthors: (p.coAuthors || []).map(c => c._id || c),
             featuredImageUrl: p.featuredImage?.url || '',
@@ -762,6 +781,7 @@ export default function PostEditor() {
       excerpt: rev.excerpt || '',
       language: rev.language || post?.language || 'en',
       category: rev.category || '',
+      subCategory: rev.subCategory || '',
       tags: (rev.tags || []).join(', '),
       coAuthors: (rev.coAuthors || []).map(c => c._id || c),
       featuredImageUrl: rev.featuredImage?.url || '',
@@ -796,6 +816,7 @@ export default function PostEditor() {
       excerpt: post.excerpt || '',
       language: post.language || 'en',
       category: post.category?._id || '',
+      subCategory: post.subCategory?._id || '',
       tags: (post.tags || []).join(', '),
       coAuthors: (post.coAuthors || []).map(c => c._id || c),
       featuredImageUrl: post.featuredImage?.url || '',
@@ -927,6 +948,7 @@ export default function PostEditor() {
       excerpt: meta.excerpt,
       language: meta.language || 'en',
       category: meta.category || null,
+      subCategory: meta.subCategory || null,
       tags: meta.tags.split(',').map((t) => t.trim()).filter(Boolean),
       coAuthors: meta.coAuthors,
       content: editor?.getJSON(),
@@ -992,6 +1014,7 @@ export default function PostEditor() {
         language: langCode,
         translationGroup: groupId,
         category: meta.category || null,
+        subCategory: meta.subCategory || null,
         tags: meta.tags.split(',').map((t) => t.trim()).filter(Boolean),
         content: editor?.getJSON(),
         contentHtml: editor?.getHTML(),
@@ -1085,6 +1108,22 @@ export default function PostEditor() {
               className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-colors ${showHistory ? 'bg-slate-200 text-slate-800' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
               History
+            </button>
+          )}
+
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowWriterModal(true);
+                setWriterTab('prompt');
+                fetchPromptHistory();
+              }}
+              title="AI Magic Writer & Prompt History"
+              className="px-4 py-2.5 rounded-xl text-sm font-bold bg-gradient-to-r from-pink-500/10 to-purple-600/10 hover:from-pink-500/20 hover:to-purple-600/20 text-purple-700 border border-purple-200 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            >
+              <span>🪄</span>
+              <span>AI Writer</span>
             </button>
           )}
 
@@ -1450,15 +1489,21 @@ export default function PostEditor() {
                     )}
                   </div>
 
-                  {/* Category */}
+                  {/* Category & Subcategory */}
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Category</label>
                     <Select
-                      options={categories.map((c) => ({ value: c._id, label: c.name }))}
+                      options={categories.filter(c => !c.parentCategory).map((c) => ({ value: c._id, label: c.name }))}
                       value={meta.category ? { value: meta.category, label: categories.find(c => c._id === meta.category)?.name || '' } : null}
-                      onChange={(selected) => setMeta((m) => ({ ...m, category: selected ? selected.value : '' }))}
+                      onChange={(selected) => {
+                        setMeta((m) => ({
+                          ...m,
+                          category: selected ? selected.value : '',
+                          subCategory: '', // reset subcategory when main category changes
+                        }));
+                      }}
                       isDisabled={!canEdit}
-                      placeholder="— Select category —"
+                      placeholder="— Select main category —"
                       className="text-sm"
                       isClearable
                       styles={{
@@ -1474,19 +1519,101 @@ export default function PostEditor() {
                     />
                   </div>
 
-                  {/* Tags */}
+                  {/* Subcategory (shown if selected category has child subcategories) */}
+                  {meta.category && categories.some(c => (c.parentCategory?._id || c.parentCategory) === meta.category) && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Subcategory</label>
+                      <Select
+                        options={categories
+                          .filter(c => (c.parentCategory?._id || c.parentCategory) === meta.category)
+                          .map(c => ({ value: c._id, label: c.name }))}
+                        value={meta.subCategory ? { value: meta.subCategory, label: categories.find(c => c._id === meta.subCategory)?.name || '' } : null}
+                        onChange={(selected) => setMeta((m) => ({ ...m, subCategory: selected ? selected.value : '' }))}
+                        isDisabled={!canEdit}
+                        placeholder="— Select subcategory (optional) —"
+                        className="text-sm"
+                        isClearable
+                        styles={{
+                          control: (base) => ({
+                            ...base,
+                            borderRadius: '0.75rem',
+                            borderColor: '#e2e8f0',
+                            padding: '2px',
+                            boxShadow: 'none',
+                            '&:hover': { borderColor: '#cbd5e1' }
+                          })
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Tags & Suggested Topic Tags */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Tags</label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Tags</label>
+                      <span className="text-[11px] text-slate-400">Used for topic feeds & recommendations</span>
+                    </div>
                     <input
                       type="text"
                       value={meta.tags}
                       onChange={(e) => setMeta((m) => ({ ...m, tags: e.target.value }))}
                       disabled={!canEdit}
-                      placeholder="news, politics, economy…"
-                      className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2
-                        focus:outline-none focus:ring-2 focus:ring-theme-purple/30 focus:border-theme-purple"
+                      placeholder="e.g. politics, elections, economy, parliament"
+                      className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-theme-purple/30 focus:border-theme-purple"
                     />
-                    <p className="text-xs text-slate-400 mt-1.5">Separate tags with commas</p>
+
+                    {/* Suggested Category Topic Tags */}
+                    {(() => {
+                      const selCat = categories.find(c => c._id === meta.category);
+                      const selSubCat = categories.find(c => c._id === meta.subCategory);
+                      const suggested = [
+                        ...(Array.isArray(selCat?.tags) ? selCat.tags : []),
+                        ...(Array.isArray(selSubCat?.tags) ? selSubCat.tags : []),
+                      ].filter((v, i, a) => a.indexOf(v) === i);
+
+                      if (suggested.length === 0) return null;
+
+                      const currentTagsArr = meta.tags
+                        .split(',')
+                        .map(t => t.trim().toLowerCase())
+                        .filter(Boolean);
+
+                      return (
+                        <div className="mt-2.5 p-2.5 bg-slate-50/80 rounded-xl border border-slate-100">
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                            <span>🏷️ Suggested Topic Tags for {selCat?.name || 'Category'}:</span>
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {suggested.map((tag) => {
+                              const isAdded = currentTagsArr.includes(tag.toLowerCase());
+                              return (
+                                <button
+                                  key={tag}
+                                  type="button"
+                                  disabled={!canEdit || isAdded}
+                                  onClick={() => {
+                                    if (!isAdded) {
+                                      const nextTags = meta.tags.trim()
+                                        ? `${meta.tags.trim().replace(/,\s*$/, '')}, ${tag}`
+                                        : tag;
+                                      setMeta((m) => ({ ...m, tags: nextTags }));
+                                    }
+                                  }}
+                                  className={`text-xs px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 ${
+                                    isAdded
+                                      ? 'bg-purple-100 text-purple-700 border border-purple-200 cursor-default'
+                                      : 'bg-white border border-slate-200 text-slate-700 hover:border-theme-purple hover:text-theme-purple shadow-2xs'
+                                  }`}
+                                >
+                                  {isAdded ? '✓' : '+'} #{tag}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    <p className="text-xs text-slate-400 mt-1.5">Separate custom tags with commas</p>
                   </div>
 
                   {/* Co-Authors (Managers/Admins only) */}
@@ -1932,16 +2059,16 @@ export default function PostEditor() {
                   try {
                     const res = await api.post('/posts/polls', {
                       question: pollQuestion,
-                      options: activeOpts
+                      options: activeOpts,
                     });
 
                     if (res.data?.success && editor) {
                       const newId = res.data.data._id;
                       editor.chain().focus().insertContent({
                         type: 'poll',
-                        attrs: { pollId: newId }
+                        attrs: { pollId: newId },
                       }).run();
-                      
+
                       setShowPollModal(false);
                       setPollQuestion('');
                       setPollOptions(['', '']);
@@ -1965,14 +2092,39 @@ export default function PostEditor() {
         </div>
       )}
 
-      {/* AI Magic Writer Modal */}
+      {/* AI Magic Writer & Prompt History Modal */}
       {showWriterModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl animate-fade-in relative flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-3xl w-full max-w-xl p-6 shadow-2xl animate-fade-in relative flex flex-col max-h-[90vh]">
             <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <h2 className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-purple-600">🪄</span> AI Magic Writer
-              </h2>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🪄</span>
+                <h2 className="font-bold text-slate-800 text-lg">AI Assistant</h2>
+              </div>
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setWriterTab('prompt')}
+                  className={`px-3 py-1.5 rounded-lg transition-all ${writerTab === 'prompt' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                >
+                  Write Article
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWriterTab('history');
+                    fetchPromptHistory();
+                  }}
+                  className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${writerTab === 'history' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                >
+                  <span>📜 History</span>
+                  {promptHistory.length > 0 && (
+                    <span className="bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded-full text-[10px]">
+                      {promptHistory.length}
+                    </span>
+                  )}
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -1980,109 +2132,220 @@ export default function PostEditor() {
                   setWriterPrompt('');
                   setWriterError('');
                 }}
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-50 text-slate-500 hover:bg-slate-200 transition-colors shadow-sm text-lg"
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-50 text-slate-500 hover:bg-slate-200 transition-colors shadow-sm text-lg ml-2"
               >
                 ×
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
-              {writerError && (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl font-semibold">
-                  ⚠️ {writerError}
+            {writerTab === 'prompt' ? (
+              <>
+                <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+                  {writerError && (
+                    <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl font-semibold">
+                      ⚠️ {writerError}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                      What should the AI research and write about?
+                    </label>
+                    <textarea
+                      rows={4}
+                      placeholder="E.g., Recent renewable energy breakthroughs in 2026, or latest political summit outcomes..."
+                      value={writerPrompt}
+                      onChange={(e) => setWriterPrompt(e.target.value)}
+                      className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-theme-purple/30 focus:border-theme-purple bg-slate-50/50 resize-none"
+                    />
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Searches the web via Google Search grounding to obtain verified facts and structured HTML.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWriterTab('history');
+                          fetchPromptHistory();
+                        }}
+                        className="text-xs text-purple-600 hover:underline font-semibold flex items-center gap-1 shrink-0 ml-2"
+                      >
+                        <span>📜 Past prompts</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              )}
 
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                  What should the AI research and write about?
-                </label>
-                <textarea
-                  rows={4}
-                  placeholder="E.g., Recent space exploration breakthroughs in 2026, or Apple's latest product launches..."
-                  value={writerPrompt}
-                  onChange={(e) => setWriterPrompt(e.target.value)}
-                  className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-theme-purple/30 focus:border-theme-purple bg-slate-50/50 resize-none"
-                />
-                <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
-                  This tool searches the web using Gemini's live Google Search grounding to obtain the latest information, and writes a detailed news article.
-                </p>
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-slate-100 flex gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowWriterModal(false);
-                  setWriterPrompt('');
-                  setWriterError('');
-                }}
-                className="flex-1 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 font-bold text-sm rounded-xl transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!writerPrompt.trim()) {
-                    setWriterError('Please enter a research prompt');
-                    return;
-                  }
-
-                  setWritingArticle(true);
-                  setWriterError('');
-                  try {
-                    const res = await api.post('/admin/ai/generate-article', {
-                      prompt: writerPrompt
-                    });
-
-                    if (res.data?.success && editor) {
-                      const { title, contentHtml } = res.data.data;
-                      
-                      // Prefill the title
-                      setMeta(m => ({
-                        ...m,
-                        title: title || m.title
-                      }));
-
-                      // Prefill the Tiptap editor content
-                      editor.commands.setContent(contentHtml);
-                      
-                      // Also update preview HTML
-                      setPreviewHtml(contentHtml);
-
+                <div className="pt-4 border-t border-slate-100 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
                       setShowWriterModal(false);
                       setWriterPrompt('');
-                    } else {
-                      setWriterError('Failed to generate article content');
-                    }
-                  } catch (err) {
-                    console.error('Failed to generate article', err);
-                    setWriterError(err.response?.data?.message || 'Error communicating with AI magic writer');
-                  } finally {
-                    setWritingArticle(false);
-                  }
-                }}
-                disabled={writingArticle}
-                className="flex-1 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-bold text-sm rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                {writingArticle ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    <span>Researching & Writing...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>🪄</span>
-                    <span>Write Article</span>
-                  </>
-                )}
-              </button>
-            </div>
+                      setWriterError('');
+                    }}
+                    className="flex-1 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 font-bold text-sm rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!writerPrompt.trim()) {
+                        setWriterError('Please enter a research prompt');
+                        return;
+                      }
+
+                      setWritingArticle(true);
+                      setWriterError('');
+                      try {
+                        const res = await api.post('/admin/ai/generate-article', {
+                          prompt: writerPrompt,
+                        });
+
+                        if (res.data?.success && editor) {
+                          const { title, contentHtml } = res.data.data;
+                          
+                          setMeta(m => ({
+                            ...m,
+                            title: title || m.title,
+                          }));
+
+                          editor.commands.setContent(contentHtml);
+                          setPreviewHtml(contentHtml);
+                          setShowWriterModal(false);
+                          setWriterPrompt('');
+                        } else {
+                          setWriterError('Failed to generate article content');
+                        }
+                      } catch (err) {
+                        console.error('Failed to generate article', err);
+                        setWriterError(err.response?.data?.message || 'Error communicating with AI magic writer');
+                      } finally {
+                        setWritingArticle(false);
+                      }
+                    }}
+                    disabled={writingArticle}
+                    className="flex-1 py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-bold text-sm rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    {writingArticle ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>Researching & Writing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>🪄</span>
+                        <span>Write Article</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* Prompt History Tab */
+              <div className="flex-1 flex flex-col overflow-hidden py-3">
+                <div className="flex items-center justify-between pb-2 mb-2">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Recorded Prompt History ({promptHistory.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={fetchPromptHistory}
+                    disabled={loadingHistory}
+                    className="text-xs text-purple-600 hover:underline font-bold flex items-center gap-1"
+                  >
+                    <span>🔄</span> {loadingHistory ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+                  {loadingHistory && promptHistory.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 text-sm">
+                      Loading recorded prompt history...
+                    </div>
+                  ) : promptHistory.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 text-sm bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                      <p className="text-2xl mb-1">📜</p>
+                      <p className="font-semibold text-slate-600">No prompt history found</p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Any prompts sent to the AI writer or editor are recorded to log files and MongoDB.
+                      </p>
+                    </div>
+                  ) : (
+                    promptHistory.map((item) => (
+                      <div
+                        key={item._id}
+                        className="p-3.5 bg-slate-50/80 hover:bg-slate-100/80 border border-slate-200/80 rounded-2xl transition-all space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-purple-100 text-purple-700">
+                            {item.action}
+                          </span>
+                          <span className="text-[11px] text-slate-400">
+                            {new Date(item.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+
+                        <p className="text-xs font-semibold text-slate-800 line-clamp-2">
+                          "{item.prompt}"
+                        </p>
+
+                        {item.title && (
+                          <p className="text-[11px] text-slate-500 italic truncate">
+                            Generated: {item.title}
+                          </p>
+                        )}
+
+                        <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-200/50">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWriterPrompt(item.prompt);
+                              setWriterTab('prompt');
+                            }}
+                            className="px-2.5 py-1 text-xs font-bold text-purple-700 bg-white border border-purple-200 hover:bg-purple-50 rounded-lg transition"
+                          >
+                            Reuse Prompt
+                          </button>
+                          {item.resultHtml && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm('Insert this previously generated article into the editor?')) {
+                                  if (item.title) setMeta((m) => ({ ...m, title: item.title }));
+                                  if (editor) {
+                                    editor.commands.setContent(item.resultHtml);
+                                    setPreviewHtml(item.resultHtml);
+                                  }
+                                  setShowWriterModal(false);
+                                }
+                              }}
+                              className="px-2.5 py-1 text-xs font-bold text-white bg-theme-purple hover:bg-purple-700 rounded-lg transition shadow-2xs"
+                            >
+                              Load Content
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 mt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setWriterTab('prompt')}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
+                  >
+                    ← Back to Prompt
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -14,6 +14,8 @@ const createCategorySchema = Joi.object({
   name: Joi.string().min(2).max(80).required(),
   description: Joi.string().max(500).allow('').optional(),
   nameTranslations: nameTranslationsSchema.optional(),
+  parentCategory: Joi.string().hex().length(24).allow(null, '').optional(),
+  tags: Joi.array().items(Joi.string().trim().lowercase()).optional().default([]),
 });
 
 const updateCategorySchema = Joi.object({
@@ -21,6 +23,8 @@ const updateCategorySchema = Joi.object({
   description: Joi.string().max(500).allow('').optional(),
   isActive: Joi.boolean().optional(),
   nameTranslations: nameTranslationsSchema.optional(),
+  parentCategory: Joi.string().hex().length(24).allow(null, '').optional(),
+  tags: Joi.array().items(Joi.string().trim().lowercase()).optional(),
 });
 
 // ─── Controllers ─────────────────────────────────────────────────────────────
@@ -46,7 +50,8 @@ export const getCategories = async (req, res, next) => {
     const categories = await Category.find(filter)
       .setOptions({ includeDeleted: showDeleted })
       .sort({ order: 1, name: 1 })
-      .populate('createdBy', 'name email');
+      .populate('createdBy', 'name email')
+      .populate('parentCategory', 'name slug');
 
     res.json({ success: true, data: categories });
   } catch (error) {
@@ -70,11 +75,20 @@ export const createCategory = async (req, res, next) => {
       return res.status(409).json({ success: false, message: 'A category with this name already exists' });
     }
 
+    // Clean tags
+    if (value.tags && Array.isArray(value.tags)) {
+      value.tags = [...new Set(value.tags.map(t => t.trim().toLowerCase()).filter(Boolean))];
+    }
+    if (!value.parentCategory) {
+      value.parentCategory = null;
+    }
+
     const category = await Category.create({ ...value, createdBy: req.user._id });
+    await category.populate('parentCategory', 'name slug');
 
     await audit.log({
       req, action: 'CATEGORY_CREATED', targetType: 'Category', targetId: category._id, targetLabel: category.name,
-      newState: { name: category.name, description: category.description, isActive: category.isActive }
+      newState: { name: category.name, description: category.description, isActive: category.isActive, parentCategory: category.parentCategory, tags: category.tags }
     });
 
     res.status(201).json({ success: true, message: 'Category created', data: category });
@@ -94,17 +108,36 @@ export const updateCategory = async (req, res, next) => {
       return res.status(400).json({ success: false, message: error.details[0].message });
     }
 
+    // Prevent category from being its own parent
+    if (value.parentCategory && value.parentCategory === req.params.id) {
+      return res.status(400).json({ success: false, message: 'Category cannot be its own parent' });
+    }
+
+    if (value.parentCategory === '') {
+      value.parentCategory = null;
+    }
+
+    if (value.tags && Array.isArray(value.tags)) {
+      value.tags = [...new Set(value.tags.map(t => t.trim().toLowerCase()).filter(Boolean))];
+    }
+
     const existingCategory = await Category.findById(req.params.id);
     if (!existingCategory) {
       return res.status(404).json({ success: false, message: 'Category not found' });
     }
-    const previousState = { name: existingCategory.name, description: existingCategory.description, isActive: existingCategory.isActive };
+    const previousState = {
+      name: existingCategory.name,
+      description: existingCategory.description,
+      isActive: existingCategory.isActive,
+      parentCategory: existingCategory.parentCategory,
+      tags: existingCategory.tags,
+    };
 
     const category = await Category.findByIdAndUpdate(
       req.params.id,
       value,
       { new: true, runValidators: true }
-    );
+    ).populate('parentCategory', 'name slug');
 
     if (!category) {
       return res.status(404).json({ success: false, message: 'Category not found' });

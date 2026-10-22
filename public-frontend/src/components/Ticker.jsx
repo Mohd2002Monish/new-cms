@@ -1,30 +1,20 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import { publicApi } from '@/lib/api';
 import { Circle, ChevronRight } from 'lucide-react';
 
 export default function Ticker() {
-  const [breakingArticles, setBreakingArticles] = useState([]);
+  const { data: res } = useQuery({
+    queryKey: ['breaking-news'],
+    queryFn: () => publicApi.getBreaking(),
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false,
+    staleTime: 30000,
+  });
 
-  const fetchBreaking = async () => {
-    try {
-      const res = await publicApi.getBreaking();
-      if (res?.success && res.data) {
-        setBreakingArticles(res.data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch breaking news:', err);
-    }
-  };
-
-  useEffect(() => {
-    fetchBreaking();
-    const intervalId = setInterval(fetchBreaking, 60000); // refresh every 60s
-    return () => clearInterval(intervalId);
-  }, []);
-
+  const breakingArticles = res?.data || [];
   if (breakingArticles.length === 0) return null;
 
   return (
@@ -38,7 +28,7 @@ export default function Ticker() {
           {/* Duplicate list to create seamless infinite scroll effect */}
           {[...breakingArticles, ...breakingArticles].map((article, idx) => (
             <span key={`${article._id || article.slug}-${idx}`} className="breaking-ticker-item">
-              <Link href={`/articles/${article.slug}`}>{article.title}</Link>
+              <Link href={`/${article.language || 'en'}/articles/${encodeURIComponent(article.slug)}`}>{article.title}</Link>
               <ChevronRight size={14} className="breaking-ticker-separator" aria-hidden="true" />
             </span>
           ))}

@@ -56,6 +56,13 @@ export default function Sidebar({ isOpen, setIsOpen }) {
 
   const toggleSidebar = () => setIsOpen(!isOpen);
 
+  // Close sidebar on navigation only on mobile viewports
+  const handleNavClick = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setIsOpen(false);
+    }
+  };
+
   // Prevent hydration mismatch for theme toggle
   const isDark = mounted && resolvedTheme === 'dark';
 
@@ -74,7 +81,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
         
         {/* Header */}
         <div className="marketerz-header">
-          <Link href={`/${lang}`} className="marketerz-brand" onClick={() => setIsOpen(false)}>
+          <Link href={`/${lang}`} className="marketerz-brand" onClick={handleNavClick}>
             <div style={{
               width: '32px', height: '32px', borderRadius: '8px', 
               backgroundColor: '#ffffff', display: 'flex', 
@@ -88,7 +95,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
             </span>
           </Link>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <Link href={`/${lang}/search`} className="marketerz-icon-btn" onClick={() => setIsOpen(false)} aria-label="Search">
+            <Link href={`/${lang}/search`} className="marketerz-icon-btn" onClick={handleNavClick} aria-label="Search">
               <Search size={20} />
             </Link>
             <button className="marketerz-icon-btn mobile-close" onClick={toggleSidebar} aria-label="Close sidebar">
@@ -121,7 +128,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
           <nav className="marketerz-nav">
             <Link
               href={`/${lang}`}
-              onClick={() => setIsOpen(false)}
+              onClick={handleNavClick}
               className={`marketerz-nav-item ${pathname === `/${lang}` ? 'active' : ''}`}
             >
               <Home className="marketerz-nav-icon" size={20} />
@@ -129,13 +136,14 @@ export default function Sidebar({ isOpen, setIsOpen }) {
             </Link>
 
             {categories.map((cat) => {
+              if (!cat.slug) return null;
               const isActive = pathname === `/${lang}/category/${cat.slug}`;
               const label = cat.localizedName || cat.name;
               return (
                 <Link
-                  key={cat._id}
+                  key={cat._id || cat.slug}
                   href={`/${lang}/category/${cat.slug}`}
-                  onClick={() => setIsOpen(false)}
+                  onClick={handleNavClick}
                   className={`marketerz-nav-item ${isActive ? 'active' : ''}`}
                 >
                   <div className="marketerz-nav-icon">
@@ -157,7 +165,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
           <div className="marketerz-section">
             <h4 className="marketerz-section-title">ACCOUNT</h4>
             <nav className="marketerz-nav">
-              <Link href={`/${lang}/saved`} className={`marketerz-nav-item ${pathname === `/${lang}/saved` ? 'active' : ''}`} onClick={() => setIsOpen(false)}>
+              <Link href={`/${lang}/saved`} className={`marketerz-nav-item ${pathname === `/${lang}/saved` ? 'active' : ''}`} onClick={handleNavClick}>
                 <Bookmark className="marketerz-nav-icon" size={20} />
                 <span className="marketerz-nav-label">Saved Articles</span>
                 {isLoaded && bookmarks.length > 0 && (
@@ -165,7 +173,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
                 )}
               </Link>
               {user && (
-                <Link href={`/${lang}/history`} className={`marketerz-nav-item ${pathname === `/${lang}/history` ? 'active' : ''}`} onClick={() => setIsOpen(false)}>
+                <Link href={`/${lang}/history`} className={`marketerz-nav-item ${pathname === `/${lang}/history` ? 'active' : ''}`} onClick={handleNavClick}>
                   <Clock className="marketerz-nav-icon" size={20} />
                   <span className="marketerz-nav-label">Reading History</span>
                 </Link>
@@ -177,7 +185,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
         {/* User Profile Footer */}
         <div className="marketerz-footer">
           {user ? (
-            <Link href={`/${lang}/history`} className="marketerz-user-pill" style={{ textDecoration: 'none', color: 'inherit' }} onClick={() => setIsOpen(false)}>
+            <Link href={`/${lang}/history`} className="marketerz-user-pill" style={{ textDecoration: 'none', color: 'inherit' }} onClick={handleNavClick}>
               <div className="avatar-fallback">{user.name.charAt(0).toUpperCase()}</div>
               <div className="marketerz-user-info" style={{ flexGrow: 1, minWidth: 0 }}>
                 <span className="user-name" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</span>
@@ -205,7 +213,13 @@ export default function Sidebar({ isOpen, setIsOpen }) {
               </button>
             </Link>
           ) : isLoggedIn ? (
-            <a href="/user" className="marketerz-user-pill" style={{ textDecoration: 'none' }}>
+            <a 
+              href="http://localhost:5173" 
+              className="marketerz-user-pill" 
+              style={{ textDecoration: 'none' }}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               <div className="avatar-fallback">A</div>
               <div className="marketerz-user-info">
                 <span className="user-name">Admin Portal</span>

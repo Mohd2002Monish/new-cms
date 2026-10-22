@@ -32,6 +32,10 @@ const notoGujarati = Noto_Sans_Gujarati({
   display: 'swap',
 });
 
+export const viewport = {
+  themeColor: '#dc2626',
+};
+
 export const metadata = {
   title: {
     template: '%s | NewsPortal',
@@ -40,7 +44,6 @@ export const metadata = {
   description:
     'Your trusted source for breaking news, in-depth analysis, and real-time updates across politics, sports, technology, and more.',
   manifest: '/manifest.json',
-  themeColor: '#e11d48',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
@@ -70,7 +73,7 @@ export default async function RootLayout({ children, params }) {
       data-scroll-behavior="smooth"
       className={`${inter.variable} ${merriweather.variable} ${notoDevanagari.variable} ${notoGujarati.variable}`}
     >
-      <body className="antialiased" data-lang={lang}>
+      <body className="antialiased" data-lang={lang} suppressHydrationWarning>
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:p-4 focus:bg-white focus:text-black">Skip to main content</a>
         <ThemeProvider>
           <AuthProvider>

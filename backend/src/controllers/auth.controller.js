@@ -273,3 +273,112 @@ export const logout = (req, res) => {
     message: 'Logged out successfully'
   });
 };
+
+// @desc    One-Click Dev Login (Development Only)
+// @route   POST /api/auth/dev-login
+// @access  Public (Dev only)
+export const devLogin = async (req, res, next) => {
+  try {
+    if (env.NODE_ENV === 'production') {
+      return res.status(403).json({ success: false, message: 'Dev login is disabled in production.' });
+    }
+
+    const { role = 'admin' } = req.body;
+
+    const roleProfiles = {
+      admin: {
+        email: 'admin@newscms.com',
+        name: 'Super Admin',
+        role: 'admin',
+        perms: { canCreateUser: true, canApprovePost: true, canDeletePost: true, canManageCats: true, canActivateUser: true, canViewReports: true, canEditApprovedPost: true }
+      },
+      manager: {
+        email: 'manager@newscms.com',
+        name: 'Editorial Manager',
+        role: 'manager',
+        perms: { canCreateUser: false, canApprovePost: true, canDeletePost: false, canManageCats: true, canActivateUser: false, canViewReports: true, canEditApprovedPost: true }
+      },
+      editor: {
+        email: 'editor@newscms.com',
+        name: 'Staff Editor',
+        role: 'editor',
+        perms: { canCreateUser: false, canApprovePost: false, canDeletePost: false, canManageCats: false, canActivateUser: false, canViewReports: false, canEditApprovedPost: false }
+      },
+      reader: {
+        email: 'reader@newscms.com',
+        name: 'Test Reader',
+        role: 'reader',
+        perms: null
+      }
+    };
+
+    const profile = roleProfiles[role] || roleProfiles.admin;
+
+    // Find or create the user in the database
+    let user = await User.findOne({ email: profile.email });
+    if (!user) {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash('DevPassword@123', salt);
+      user = await User.create({
+        name: profile.name,
+        email: profile.email,
+        password: hashedPassword,
+        role: profile.role,
+        status: 'active',
+      });
+    } else {
+      let modified = false;
+      if (user.status !== 'active') { user.status = 'active'; modified = true; }
+      if (user.role !== profile.role) { user.role = profile.role; modified = true; }
+      if (modified) await user.save();
+    }
+
+    // Ensure permissions record exists for admin/manager/editor
+    if (profile.perms) {
+      try {
+        const { Permission } = await import('../models/Permission.js');
+        if (Permission) {
+          await Permission.findOneAndUpdate(
+            { userId: user._id },
+            { $set: profile.perms },
+            { upsert: true, new: true }
+          );
+        }
+      } catch (e) {
+        // Non-fatal
+      }
+    }
+
+    // Generate tokens
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    user.lastLogin = new Date();
+    await user.save();
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        accessToken,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          status: user.status,
+          bookmarks: user.bookmarks || []
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

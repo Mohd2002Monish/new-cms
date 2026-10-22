@@ -8,9 +8,14 @@ import Image from 'next/image';
 import { publicApi } from '@/lib/api';
 import { timeAgo } from '@/lib/utils';
 
+import { usePathname } from 'next/navigation';
+
 export default function HeroSlider() {
   const [sliderPosts, setSliderPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const pathname = usePathname();
+  const segment = pathname?.split('/')[1];
+  const lang = ['en', 'hi', 'gu'].includes(segment) ? segment : undefined;
 
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true, align: 'start' }, [
     Autoplay({ delay: 5000, stopOnInteraction: false, stopOnMouseEnter: true }),
@@ -19,7 +24,12 @@ export default function HeroSlider() {
   useEffect(() => {
     async function loadSliderPosts() {
       try {
-        const response = await publicApi.getArticles({ limit: 8, isSlider: 'true', sort: 'slider' });
+        const params = { limit: 8, isSlider: 'true', sort: 'slider' };
+        if (lang) params.lang = lang;
+        let response = await publicApi.getArticles(params);
+        if (!response?.data?.length && lang) {
+          response = await publicApi.getArticles({ limit: 8, isSlider: 'true', sort: 'slider' });
+        }
         setSliderPosts(response.data || []);
       } catch (err) {
         console.error('Failed to load slider posts', err);
@@ -28,7 +38,7 @@ export default function HeroSlider() {
       }
     }
     loadSliderPosts();
-  }, []);
+  }, [lang]);
 
   if (loading) {
     return <div className="hero-banner-skeleton" aria-label="Loading featured stories" />;
@@ -73,12 +83,14 @@ export default function HeroSlider() {
                 {/* Category tag */}
                 {post.category?.name && (
                   <div>
-                    <span className="hero-banner-tag">{post.category.name}</span>
+                    <span className="hero-banner-tag">
+                      {post.category.nameTranslations?.[lang] || post.category.localizedName || post.category.name}
+                    </span>
                   </div>
                 )}
 
                 {/* Headline */}
-                <Link href={`/articles/${post.slug}`}>
+                <Link href={lang ? `/${lang}/articles/${post.slug}` : `/articles/${post.slug}`}>
                   <h2 className="hero-banner-headline">{post.title}</h2>
                 </Link>
 

@@ -32,19 +32,19 @@ export const publicApi = {
    * Fetch a single article by its slug.
    */
   getArticle: (slug) =>
-    api.get(`/public/articles/${slug}`).then(r => r.data),
+    api.get(`/public/articles/${encodeURIComponent(slug)}`).then(r => r.data),
 
   /**
    * Fetch related articles by slug.
    */
   getRelatedArticles: (slug) =>
-    api.get(`/public/articles/${slug}/related`).then(r => r.data),
+    api.get(`/public/articles/${encodeURIComponent(slug)}/related`).then(r => r.data),
 
   /**
    * Increment the view count for an article.
    */
   incrementView: (slug) =>
-    api.post(`/public/articles/${slug}/view`).then(r => r.data),
+    api.post(`/public/articles/${encodeURIComponent(slug)}/view`).then(r => r.data),
 
   /**
    * Fetch top N trending articles by view count.
@@ -159,6 +159,12 @@ export const publicApi = {
     api.get(`/public/polls/${id}`).then(r => r.data),
   voteInPoll: (id, optionId) =>
     api.post(`/public/polls/${id}/vote`, { optionId }).then(r => r.data),
+
+  // ─── Text to Speech (TTS) ──────────────────────────────────────────────────
+  synthesizeSpeech: (data) =>
+    api.post('/public/tts/synthesize', data).then(r => r.data),
+  getTtsLanguages: () =>
+    api.get('/public/tts/languages').then(r => r.data),
 };
 
 export default api;

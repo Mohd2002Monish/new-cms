@@ -15,7 +15,8 @@
     "build:frontend": "npm run build --prefix frontend",
     "build:backend": "npm run build --prefix backend",
     "build:public-frontend": "npm run build --prefix public-frontend",
-    "build:all": "npm run build:frontend && npm run build:backend && npm run build:public-frontend"
+    "build:all": "npm run build:frontend && npm run build:backend && npm run build:public-frontend",
+    "clean": "npm run clean --prefix public-frontend && rm -rf frontend/dist backend/logs/*.log"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
