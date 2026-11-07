@@ -1,0 +1,6 @@
+node_modules/
+.expo/
+.gradle/
+*.log
+android/
+ios/

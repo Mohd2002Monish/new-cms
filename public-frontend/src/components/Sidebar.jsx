@@ -3,46 +3,41 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { 
-  Home, 
-  Search,
-  Bookmark,
-  Settings,
-  LogIn,
-  Flame,
-  Clock
-} from 'lucide-react';
+import { Search } from 'lucide-react';
 import { publicApi } from '@/lib/api';
 import { useBookmarks } from '@/hooks/useBookmarks';
 import { useTheme } from 'next-themes';
 import { useAuth } from '@/context/AuthContext';
 import LanguageSwitcher from './LanguageSwitcher';
+import SidebarUserProfile from './sidebar/SidebarUserProfile';
+import SidebarNavLinks from './sidebar/SidebarNavLinks';
 
 const LOCALES = ['en', 'hi', 'gu'];
 
+/**
+ * Sidebar — Main navigation drawer for mobile and compact desktop layouts
+ */
 export default function Sidebar({ isOpen, setIsOpen }) {
   const pathname = usePathname();
   const segment = pathname?.split('/')[1];
   const lang = LOCALES.includes(segment) ? segment : 'en';
   const [categories, setCategories] = useState([]);
-  
-  // Hooks for actual functionality
+
   const { bookmarks, isLoaded } = useBookmarks();
   const { resolvedTheme, setTheme } = useTheme();
   const { user, openAuthModal, logout: readerLogout } = useAuth();
-  
+
   const [mounted, setMounted] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-    
-    // Check auth status from admin panel localStorage
-    const token = localStorage.getItem('accessToken');
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     if (token) {
       setIsLoggedIn(true);
     }
-    
+
     async function loadCats() {
       try {
         const response = await publicApi.getCategories({ lang });
@@ -56,14 +51,12 @@ export default function Sidebar({ isOpen, setIsOpen }) {
 
   const toggleSidebar = () => setIsOpen(!isOpen);
 
-  // Close sidebar on navigation only on mobile viewports
   const handleNavClick = () => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024) {
       setIsOpen(false);
     }
   };
 
-  // Prevent hydration mismatch for theme toggle
   const isDark = mounted && resolvedTheme === 'dark';
 
   return (
@@ -78,7 +71,6 @@ export default function Sidebar({ isOpen, setIsOpen }) {
 
       {/* Sidebar Container */}
       <aside className={`marketerz-sidebar ${isOpen ? '' : 'closed'}`}>
-        
         {/* Header */}
         <div className="marketerz-header">
           <Link href={`/${lang}`} className="marketerz-brand" onClick={handleNavClick}>
@@ -104,7 +96,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
           </div>
         </div>
 
-        {/* Language Switcher Pill */}
+        {/* Language Switcher */}
         <LanguageSwitcher />
 
         {/* Theme Toggle Pill */}
@@ -123,125 +115,28 @@ export default function Sidebar({ isOpen, setIsOpen }) {
           </button>
         </div>
 
-        <div className="marketerz-scrollable">
-          {/* Main Menu */}
-          <nav className="marketerz-nav">
-            <Link
-              href={`/${lang}`}
-              onClick={handleNavClick}
-              className={`marketerz-nav-item ${pathname === `/${lang}` ? 'active' : ''}`}
-            >
-              <Home className="marketerz-nav-icon" size={20} />
-              <span className="marketerz-nav-label">Dashboard</span>
-            </Link>
-
-            {categories.map((cat) => {
-              if (!cat.slug) return null;
-              const isActive = pathname === `/${lang}/category/${cat.slug}`;
-              const label = cat.localizedName || cat.name;
-              return (
-                <Link
-                  key={cat._id || cat.slug}
-                  href={`/${lang}/category/${cat.slug}`}
-                  onClick={handleNavClick}
-                  className={`marketerz-nav-item ${isActive ? 'active' : ''}`}
-                >
-                  <div className="marketerz-nav-icon">
-                    <div style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      width: '20px', height: '20px', borderRadius: '4px',
-                      border: '1.5px solid currentColor'
-                    }}>
-                      <span style={{ fontSize: '10px', fontWeight: 'bold' }}>{label.charAt(0).toUpperCase()}</span>
-                    </div>
-                  </div>
-                  <span className="marketerz-nav-label">{label}</span>
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* Account Section */}
-          <div className="marketerz-section">
-            <h4 className="marketerz-section-title">ACCOUNT</h4>
-            <nav className="marketerz-nav">
-              <Link href={`/${lang}/saved`} className={`marketerz-nav-item ${pathname === `/${lang}/saved` ? 'active' : ''}`} onClick={handleNavClick}>
-                <Bookmark className="marketerz-nav-icon" size={20} />
-                <span className="marketerz-nav-label">Saved Articles</span>
-                {isLoaded && bookmarks.length > 0 && (
-                  <span className="marketerz-badge yellow">{bookmarks.length}</span>
-                )}
-              </Link>
-              {user && (
-                <Link href={`/${lang}/history`} className={`marketerz-nav-item ${pathname === `/${lang}/history` ? 'active' : ''}`} onClick={handleNavClick}>
-                  <Clock className="marketerz-nav-icon" size={20} />
-                  <span className="marketerz-nav-label">Reading History</span>
-                </Link>
-              )}
-            </nav>
-          </div>
-        </div>
+        {/* Navigation Links List */}
+        <SidebarNavLinks
+          categories={categories}
+          pathname={pathname}
+          lang={lang}
+          onNavClick={handleNavClick}
+          user={user}
+          bookmarks={bookmarks}
+          isBookmarksLoaded={isLoaded}
+        />
 
         {/* User Profile Footer */}
         <div className="marketerz-footer">
-          {user ? (
-            <Link href={`/${lang}/history`} className="marketerz-user-pill" style={{ textDecoration: 'none', color: 'inherit' }} onClick={handleNavClick}>
-              <div className="avatar-fallback">{user.name.charAt(0).toUpperCase()}</div>
-              <div className="marketerz-user-info" style={{ flexGrow: 1, minWidth: 0 }}>
-                <span className="user-name" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</span>
-                <span className="user-email" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</span>
-              </div>
-              {user.readingStreak > 0 && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '3px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.15)', color: '#f59e0b',
-                  padding: '2px 6px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold',
-                  marginRight: '8px', flexShrink: 0
-                }} title={`${user.readingStreak} day reading streak`}>
-                  <Flame size={12} fill="#f59e0b" style={{ color: '#f59e0b' }} />
-                  <span>{user.readingStreak}</span>
-                </div>
-              )}
-              <button 
-                className="marketerz-more-btn" 
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); readerLogout(); }} 
-                aria-label="Sign Out"
-                title="Sign Out"
-                style={{ flexShrink: 0 }}
-              >
-                <LogIn size={18} style={{ transform: 'rotate(180deg)' }} />
-              </button>
-            </Link>
-          ) : isLoggedIn ? (
-            <a 
-              href="http://localhost:5173" 
-              className="marketerz-user-pill" 
-              style={{ textDecoration: 'none' }}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <div className="avatar-fallback">A</div>
-              <div className="marketerz-user-info">
-                <span className="user-name">Admin Portal</span>
-                <span className="user-email">Manage Portal</span>
-              </div>
-              <button className="marketerz-more-btn" aria-label="Settings">
-                <Settings size={18} />
-              </button>
-            </a>
-          ) : (
-            <div className="marketerz-user-pill" style={{ cursor: 'pointer' }} onClick={() => openAuthModal()}>
-              <div className="avatar-fallback" style={{ background: 'transparent', border: '1px solid currentColor', color: 'inherit' }}>
-                <LogIn size={16} />
-              </div>
-              <div className="marketerz-user-info">
-                <span className="user-name">Sign In</span>
-                <span className="user-email">Save and react to stories</span>
-              </div>
-            </div>
-          )}
+          <SidebarUserProfile
+            user={user}
+            isLoggedIn={isLoggedIn}
+            lang={lang}
+            onNavClick={handleNavClick}
+            onOpenAuth={openAuthModal}
+            onLogout={readerLogout}
+          />
         </div>
-
       </aside>
     </>
   );

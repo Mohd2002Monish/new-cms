@@ -16,7 +16,7 @@ export default function TrendingSidebar({ articles = [] }) {
     <aside className="trending-panel" aria-label="Trending articles">
       {/* Panel header */}
       <div className="trending-panel-header">
-        <Flame size={18} style={{ color: '#C0392B', flexShrink: 0 }} aria-hidden="true" />
+        <Flame size={18} style={{ color: 'var(--color-brand)', flexShrink: 0 }} aria-hidden="true" />
         <h2 className="trending-panel-title">Trending Now</h2>
       </div>
 
@@ -55,12 +55,14 @@ export default function TrendingSidebar({ articles = [] }) {
                       <div
                         style={{
                           width: '100%', height: '100%',
-                          background: 'linear-gradient(135deg, #4a0e0e, #8b1a1a)',
+                          background: 'var(--color-bg-alt)',
+                          border: '1px solid var(--color-border)',
+                          borderRadius: 'var(--radius-sm)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}
                         aria-hidden="true"
                       >
-                        <Newspaper size={20} style={{ color: 'rgba(255,255,255,0.6)' }} />
+                        <Newspaper size={20} style={{ color: 'var(--color-text-muted)' }} />
                       </div>
                     )}
                   </div>

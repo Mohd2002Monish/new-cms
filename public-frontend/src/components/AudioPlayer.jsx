@@ -1,25 +1,18 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Play, Pause, RotateCcw, Volume2, Loader2 } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { publicApi } from '@/lib/api';
+import AudioPlayButton from './audio/AudioPlayButton';
+import AudioScrubber from './audio/AudioScrubber';
+import AudioSpeedSelector from './audio/AudioSpeedSelector';
+import AudioLanguageSelector, { LANGUAGE_CONFIGS } from './audio/AudioLanguageSelector';
+import AudioPlayerStyles from './audio/AudioPlayerStyles';
 
-const LANGUAGE_CONFIGS = [
-  {
-    code: "gu",
-    label: "🇮🇳 ગુજરાતી (Gujarati)",
-    shortLabel: "GU",
-  },
-  {
-    code: "hi",
-    label: "🇮🇳 हिन्दी (Hindi)",
-    shortLabel: "HI",
-  },
-  { code: "en", label: "🌐 English", shortLabel: "EN" },
-];
-
+/**
+ * AudioPlayer — Text-to-Speech audio reader with server TTS & browser fallback
+ */
 export default function AudioPlayer({ text, language = 'en', articleId = null, title = '' }) {
-  // Normalize language prop ('gu', 'hi', 'en')
   const initialLang = (language || 'en').toLowerCase().slice(0, 2);
   const normalizedLang = ['gu', 'hi', 'en'].includes(initialLang) ? initialLang : 'en';
 
@@ -37,7 +30,7 @@ export default function AudioPlayer({ text, language = 'en', articleId = null, t
   const progressBarRef = useRef(null);
   const fallbackUtteranceRef = useRef(null);
 
-  // Load saved speed preference from localStorage on mount
+  // Load speed preference from localStorage
   useEffect(() => {
     try {
       const saved = localStorage.getItem('news-portal-audio-speed');
@@ -50,8 +43,8 @@ export default function AudioPlayer({ text, language = 'en', articleId = null, t
           }
         }
       }
-    } catch (e) {
-      // ignore storage access error
+    } catch (_) {
+      // ignore storage error
     }
   }, []);
 
@@ -65,7 +58,7 @@ export default function AudioPlayer({ text, language = 'en', articleId = null, t
     }
   }, [language]);
 
-  // When selectedLang or text changes, stop playback and clear loaded audio
+  // Reset playback when text or language changes
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.pause();
@@ -85,106 +78,85 @@ export default function AudioPlayer({ text, language = 'en', articleId = null, t
   // Clean up on unmount
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
+      if (audioRef.current) audioRef.current.pause();
       if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
       }
     };
   }, []);
 
-  // Web Speech fallback for offline/emergency situations
+  // Web Speech API fallback
   const startWebSpeechFallback = () => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
-
     window.speechSynthesis.cancel();
-    const cleanText = text.replace(/<[^>]*>/g, '').trim();
-    if (!cleanText) return;
 
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    fallbackUtteranceRef.current = utterance;
+    const plainText = text ? text.replace(/<[^>]+>/g, ' ') : title;
+    const utterance = new SpeechSynthesisUtterance(plainText);
     utterance.rate = speed;
 
-    const allVoices = window.speechSynthesis.getVoices();
-    const matchingVoice = allVoices.find((v) => v.lang.startsWith(selectedLang));
-    if (matchingVoice) {
-      utterance.voice = matchingVoice;
-      utterance.lang = matchingVoice.lang;
-    } else {
-      utterance.lang = selectedLang === 'gu' ? 'gu-IN' : selectedLang === 'hi' ? 'hi-IN' : 'en-US';
-    }
+    const voices = window.speechSynthesis.getVoices();
+    const matchedVoice = voices.find((v) => v.lang.startsWith(selectedLang));
+    if (matchedVoice) utterance.voice = matchedVoice;
 
+    utterance.onstart = () => {
+      setIsLoading(false);
+      setIsPlaying(true);
+      setUseFallbackWebSpeech(true);
+    };
     utterance.onend = () => {
       setIsPlaying(false);
       setCurrentTime(0);
     };
-
-    utterance.onerror = (e) => {
-      if (e.error !== 'interrupted') {
-        console.warn('Web speech error:', e);
-        setIsPlaying(false);
-      }
+    utterance.onerror = () => {
+      setIsLoading(false);
+      setIsPlaying(false);
     };
 
+    fallbackUtteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
-    setIsPlaying(true);
-    setUseFallbackWebSpeech(true);
   };
 
   const handlePlay = async () => {
-    if (!text) return;
+    if (!text && !title) return;
 
-    // 1. If Web Speech is already in fallback mode
     if (useFallbackWebSpeech) {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        if (window.speechSynthesis.paused) {
-          window.speechSynthesis.resume();
-          setIsPlaying(true);
-        } else {
-          startWebSpeechFallback();
-        }
-      }
-      return;
-    }
-
-    // 2. If audio is already loaded in the HTML5 player
-    if (audioRef.current && audioSrc) {
-      try {
-        await audioRef.current.play();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
         setIsPlaying(true);
-      } catch (err) {
-        console.warn('Audio play failed:', err);
+      } else {
+        startWebSpeechFallback();
       }
       return;
     }
 
-    // 3. Fetch synthesized audio using Google Free TTS Model
+    if (audioSrc && audioRef.current) {
+      audioRef.current.play();
+      setIsPlaying(true);
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const res = await publicApi.synthesizeSpeech({
-        text,
+      const cleanSnippet = (text || title).slice(0, 1500).replace(/<[^>]+>/g, ' ');
+      const res = await publicApi.getSpeechAudio({
+        text: cleanSnippet,
         language: selectedLang,
-        rate: speed,
         articleId,
       });
 
-      if (res?.success && res?.data?.audioContent) {
-        const src = res.data.audioContent;
-        setAudioSrc(src);
-        setIsCached(Boolean(res.data.cached));
-
+      if (res?.data?.audioUrl) {
+        setAudioSrc(res.data.audioUrl);
+        setIsCached(!!res.data.isCached);
         if (audioRef.current) {
-          audioRef.current.src = src;
+          audioRef.current.src = res.data.audioUrl;
           audioRef.current.playbackRate = speed;
-          await audioRef.current.play();
+          audioRef.current.play();
           setIsPlaying(true);
         }
       } else {
-        throw new Error(res?.message || 'Synthesis returned no audio');
+        startWebSpeechFallback();
       }
-    } catch (err) {
-      console.warn('Google Free TTS failed, falling back to Web Speech API:', err.message);
+    } catch (_) {
       startWebSpeechFallback();
     } finally {
       setIsLoading(false);
@@ -193,19 +165,25 @@ export default function AudioPlayer({ text, language = 'en', articleId = null, t
 
   const handlePause = () => {
     if (useFallbackWebSpeech) {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
+      if (window.speechSynthesis.speaking) {
         window.speechSynthesis.pause();
+        setIsPlaying(false);
       }
-    } else if (audioRef.current) {
-      audioRef.current.pause();
+      return;
     }
-    setIsPlaying(false);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    }
   };
 
   const handleReset = () => {
     if (useFallbackWebSpeech) {
+      window.speechSynthesis.cancel();
       startWebSpeechFallback();
-    } else if (audioRef.current) {
+      return;
+    }
+    if (audioRef.current) {
       audioRef.current.currentTime = 0;
       audioRef.current.play();
       setIsPlaying(true);
@@ -213,70 +191,59 @@ export default function AudioPlayer({ text, language = 'en', articleId = null, t
   };
 
   const handleSeek = (e) => {
-    if (!audioRef.current || !duration || useFallbackWebSpeech) return;
+    if (!progressBarRef.current || !duration || useFallbackWebSpeech) return;
     const rect = progressBarRef.current.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
-    const pct = Math.max(0, Math.min(clickX / rect.width, 1));
-    const seekTime = pct * duration;
-    audioRef.current.currentTime = seekTime;
-    setCurrentTime(seekTime);
+    const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+    const newTime = ratio * duration;
+    setCurrentTime(newTime);
+    if (audioRef.current) {
+      audioRef.current.currentTime = newTime;
+    }
   };
 
   const changeSpeed = (newSpeed) => {
     setSpeed(newSpeed);
     try {
-      localStorage.setItem('news-portal-audio-speed', String(newSpeed));
-    } catch (e) {
-      // ignore
-    }
+      localStorage.setItem('news-portal-audio-speed', newSpeed.toString());
+    } catch (_) {}
     if (audioRef.current) {
       audioRef.current.playbackRate = newSpeed;
     }
-    if (useFallbackWebSpeech && isPlaying) {
+    if (useFallbackWebSpeech && fallbackUtteranceRef.current) {
+      window.speechSynthesis.cancel();
       startWebSpeechFallback();
     }
   };
 
   const formatTime = (secs) => {
-    if (!secs || isNaN(secs)) return '0:00';
-    const m = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60);
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
+    const mins = Math.floor(secs / 60);
+    const remainder = Math.floor(secs % 60);
+    return `${mins}:${remainder < 10 ? '0' : ''}${remainder}`;
   };
 
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
-
-  // Localized title
-  const listenLabel =
-    selectedLang === 'gu'
-      ? 'આ લેખ સાંભળો'
-      : selectedLang === 'hi'
-      ? 'यह समाचार सुनें'
-      : 'Listen to this article';
+  const currentLangConfig = LANGUAGE_CONFIGS.find((l) => l.code === selectedLang) || LANGUAGE_CONFIGS[2];
+  const listenLabel = isCached
+    ? `Listen to Narration (${currentLangConfig.shortLabel})`
+    : `Audio Narration (${currentLangConfig.shortLabel})`;
 
   return (
     <>
-      {/* Hidden HTML5 Audio Element */}
       <audio
         ref={audioRef}
         onTimeUpdate={() => {
-          if (audioRef.current) {
-            setCurrentTime(audioRef.current.currentTime);
-          }
+          if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
         }}
         onLoadedMetadata={() => {
-          if (audioRef.current) {
-            setDuration(audioRef.current.duration);
-            audioRef.current.playbackRate = speed;
-          }
+          if (audioRef.current) setDuration(audioRef.current.duration);
         }}
         onEnded={() => {
           setIsPlaying(false);
           setCurrentTime(0);
         }}
-        onPause={() => setIsPlaying(false)}
-        onPlay={() => {
-          if (audioRef.current) {
+        onCanPlay={() => {
+          if (audioRef.current && isPlaying) {
             audioRef.current.playbackRate = speed;
           }
           setIsPlaying(true);
@@ -285,49 +252,24 @@ export default function AudioPlayer({ text, language = 'en', articleId = null, t
 
       <div className="audio-player-widget">
         <div className="player-left">
-          <button
-            onClick={isPlaying ? handlePause : handlePlay}
-            disabled={isLoading}
-            className="play-btn"
-            aria-label={isPlaying ? 'Pause reading' : 'Listen to article'}
-            title={isPlaying ? 'Pause' : 'Play voice narration'}
-          >
-            {isLoading ? (
-              <Loader2 size={16} className="animate-spin text-white" />
-            ) : isPlaying ? (
-              <Pause size={16} fill="currentColor" />
-            ) : (
-              <Play size={16} fill="currentColor" style={{ marginLeft: 2 }} />
-            )}
-          </button>
+          <AudioPlayButton
+            isPlaying={isPlaying}
+            isLoading={isLoading}
+            onPlay={handlePlay}
+            onPause={handlePause}
+          />
 
           <div className="player-info">
             <span className="player-label">{listenLabel}</span>
-
-            <div className="time-display-wrapper">
-              <span className="time-display">
-                {formatTime(currentTime)} / {formatTime(duration)}
-              </span>
-              <div className="wave-container">
-                <div className={`wave-bar ${isPlaying ? 'playing' : ''}`} />
-                <div className={`wave-bar ${isPlaying ? 'playing' : ''}`} />
-                <div className={`wave-bar ${isPlaying ? 'playing' : ''}`} />
-                <div className={`wave-bar ${isPlaying ? 'playing' : ''}`} />
-                <div className={`wave-bar ${isPlaying ? 'playing' : ''}`} />
-              </div>
-            </div>
-
-            <div
-              ref={progressBarRef}
-              onClick={handleSeek}
-              className="progress-bar-container"
-              title="Click to seek"
-            >
-              <div
-                className="progress-bar-fill"
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
+            <AudioScrubber
+              currentTime={currentTime}
+              duration={duration}
+              progressPct={progressPct}
+              isPlaying={isPlaying}
+              onSeek={handleSeek}
+              progressBarRef={progressBarRef}
+              formatTime={formatTime}
+            />
           </div>
         </div>
 
@@ -343,267 +285,18 @@ export default function AudioPlayer({ text, language = 'en', articleId = null, t
             </button>
           )}
 
-          {/* Language Selector */}
-          <div className="voice-selector-container">
-            <select
-              value={selectedLang}
-              onChange={(e) => setSelectedLang(e.target.value)}
-              className="voice-select"
-              aria-label="Select Voice Language"
-            >
-              {LANGUAGE_CONFIGS.map((lang) => (
-                <option key={lang.code} value={lang.code}>
-                  {lang.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <AudioLanguageSelector
+            selectedLang={selectedLang}
+            onSelectLang={setSelectedLang}
+          />
 
-          {/* Speed Selector */}
-          <div className="speed-selector">
-            <Volume2 size={13} className="volume-icon" />
-            {[1, 1.25, 1.5, 2].map((s) => (
-              <button
-                key={s}
-                onClick={() => changeSpeed(s)}
-                className={`speed-btn ${speed === s ? 'active' : ''}`}
-                title={`Playback speed ${s}x`}
-              >
-                {s}x
-              </button>
-            ))}
-          </div>
+          <AudioSpeedSelector
+            speed={speed}
+            onChangeSpeed={changeSpeed}
+          />
         </div>
 
-        <style jsx>{`
-          .audio-player-widget {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: var(--color-bg-alt, #f8fafc);
-            border: 1px solid var(--color-border, #e2e8f0);
-            border-radius: 12px;
-            padding: 12px 18px;
-            margin-bottom: 24px;
-            font-family: var(--font-inter), sans-serif;
-            gap: 16px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-            transition: border-color 0.2s, background-color 0.2s;
-          }
-
-          .player-left {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            flex: 1;
-            min-width: 0;
-          }
-
-          .play-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 38px;
-            height: 38px;
-            border-radius: 50%;
-            background: #c0392b;
-            color: #ffffff;
-            border: none;
-            cursor: pointer;
-            transition: transform 0.15s, background-color 0.15s;
-            box-shadow: 0 4px 8px -2px rgba(192, 57, 43, 0.35);
-            flex-shrink: 0;
-          }
-          .play-btn:hover:not(:disabled) {
-            background: #a93226;
-            transform: scale(1.05);
-          }
-          .play-btn:disabled {
-            opacity: 0.8;
-            cursor: wait;
-          }
-
-          .player-info {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            flex: 1;
-            min-width: 0;
-          }
-
-          .player-label {
-            font-size: 12px;
-            font-weight: 700;
-            color: var(--color-text, #1e293b);
-            letter-spacing: 0.01em;
-          }
-
-          .time-display-wrapper {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            height: 14px;
-          }
-
-          .time-display {
-            font-size: 10px;
-            font-weight: 700;
-            color: var(--color-text-secondary, #64748b);
-            font-family: monospace;
-          }
-
-          .progress-bar-container {
-            width: 100%;
-            max-width: 220px;
-            height: 5px;
-            background: var(--color-border, #e2e8f0);
-            border-radius: 3px;
-            overflow: hidden;
-            cursor: pointer;
-            position: relative;
-          }
-          .progress-bar-container:hover {
-            height: 7px;
-          }
-
-          .progress-bar-fill {
-            height: 100%;
-            background: #c0392b;
-            border-radius: 3px;
-            transition: width 0.15s linear;
-          }
-
-          .wave-container {
-            display: flex;
-            align-items: center;
-            gap: 3px;
-            height: 12px;
-          }
-
-          .wave-bar {
-            width: 2px;
-            height: 3px;
-            background: #c0392b;
-            border-radius: 2px;
-            transition: height 0.2s;
-          }
-          .wave-bar.playing {
-            animation: wave-bounce 1s ease-in-out infinite alternate;
-          }
-          .wave-bar:nth-child(2) {
-            animation-delay: 0.15s;
-          }
-          .wave-bar:nth-child(3) {
-            animation-delay: 0.3s;
-          }
-          .wave-bar:nth-child(4) {
-            animation-delay: 0.45s;
-          }
-          .wave-bar:nth-child(5) {
-            animation-delay: 0.6s;
-          }
-
-          @keyframes wave-bounce {
-            from {
-              height: 3px;
-            }
-            to {
-              height: 12px;
-            }
-          }
-
-          .player-controls {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-shrink: 0;
-          }
-
-          .control-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: transparent;
-            border: none;
-            color: var(--color-text-secondary, #64748b);
-            cursor: pointer;
-            padding: 6px;
-            border-radius: 6px;
-            transition: background 0.2s, color 0.2s;
-          }
-          .control-btn:hover {
-            background: var(--color-border, #e2e8f0);
-            color: var(--color-text, #1e293b);
-          }
-
-          .voice-selector-container {
-            display: flex;
-            align-items: center;
-          }
-
-          .voice-select {
-            background: var(--color-bg, #ffffff);
-            border: 1px solid var(--color-border, #e2e8f0);
-            border-radius: 8px;
-            padding: 5px 8px;
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--color-text, #1e293b);
-            outline: none;
-            cursor: pointer;
-            transition: border-color 0.2s;
-          }
-          .voice-select:hover {
-            border-color: #c0392b;
-          }
-
-          .speed-selector {
-            display: flex;
-            align-items: center;
-            background: var(--color-bg, #ffffff);
-            border: 1px solid var(--color-border, #e2e8f0);
-            border-radius: 20px;
-            padding: 3px 8px;
-            gap: 4px;
-          }
-
-          .volume-icon {
-            color: var(--color-text-secondary, #64748b);
-            margin-right: 2px;
-          }
-
-          .speed-btn {
-            background: transparent;
-            border: none;
-            font-size: 11px;
-            font-weight: 700;
-            color: var(--color-text-secondary, #64748b);
-            cursor: pointer;
-            padding: 3px 6px;
-            border-radius: 10px;
-            transition: background 0.15s, color 0.15s;
-          }
-          .speed-btn:hover {
-            color: var(--color-text, #1e293b);
-          }
-          .speed-btn.active {
-            background: var(--color-bg-alt, #f1f5f9);
-            color: #c0392b;
-          }
-
-          @media (max-width: 768px) {
-            .audio-player-widget {
-              flex-direction: column;
-              align-items: flex-start;
-              gap: 12px;
-            }
-            .player-controls {
-              width: 100%;
-              justify-content: flex-start;
-              flex-wrap: wrap;
-            }
-          }
-        `}</style>
+        <AudioPlayerStyles />
       </div>
     </>
   );

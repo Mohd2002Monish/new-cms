@@ -2,20 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { publicApi } from '@/lib/api';
-import { useAuth } from '@/context/AuthContext';
-import { BarChart3, CheckCircle, Vote, AlertCircle } from 'lucide-react';
+import { BarChart3, CheckCircle, AlertCircle } from 'lucide-react';
+import PollOptionButton from './poll/PollOptionButton';
+import PollResultBar from './poll/PollResultBar';
 
+/**
+ * OpinionPoll — Interactive reader opinion poll with real-time voting and GPU-accelerated results
+ */
 export default function OpinionPoll({ pollId }) {
-  const { openAuthModal } = useAuth();
   const [poll, setPoll] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isVoting, setIsVoting] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (!pollId) return;
-    loadPoll();
-  }, [pollId]);
 
   const loadPoll = async () => {
     setLoading(true);
@@ -34,6 +32,12 @@ export default function OpinionPoll({ pollId }) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!pollId) return;
+    loadPoll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollId]);
 
   const handleVote = async (optionId) => {
     if (isVoting) return;
@@ -98,7 +102,7 @@ export default function OpinionPoll({ pollId }) {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
         <BarChart3 size={16} style={{ color: 'var(--color-brand)' }} />
-        <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--color-brand)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        <span style={{ fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-brand)' }}>
           Reader Opinion Poll
         </span>
       </div>
@@ -115,102 +119,36 @@ export default function OpinionPoll({ pollId }) {
       </h3>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {poll.options.map(option => {
+        {poll.options.map((option) => {
           const percentage = totalVotes > 0 ? Math.round((option.votes / totalVotes) * 100) : 0;
           
           if (poll.hasVoted) {
             return (
-              <div 
+              <PollResultBar
                 key={option._id}
-                style={{
-                  position: 'relative',
-                  padding: '12px 16px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--color-border)',
-                  backgroundColor: 'var(--color-bg-alt)',
-                  overflow: 'hidden',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  minHeight: '46px'
-                }}
-              >
-                {/* Visual percentage fill background */}
-                <div style={{
-                  position: 'absolute',
-                  top: 0, left: 0, bottom: 0,
-                  width: `${percentage}%`,
-                  backgroundColor: 'rgba(220, 38, 38, 0.08)',
-                  transition: 'width 0.8s cubic-bezier(0.1, 0.8, 0.2, 1)',
-                  zIndex: 1
-                }} />
-
-                <span style={{ position: 'relative', zIndex: 2, fontSize: '14px', fontWeight: 600, color: 'var(--color-text)', minWidth: 0, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                  {option.text}
-                </span>
-
-                <div style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                  <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--color-brand)' }}>{percentage}%</span>
-                  <span style={{ fontSize: '11px', color: 'var(--color-text-light)' }}>({option.votes.toLocaleString()})</span>
-                </div>
-              </div>
+                option={option}
+                percentage={percentage}
+              />
             );
           }
 
           return (
-            <button
+            <PollOptionButton
               key={option._id}
-              onClick={() => handleVote(option._id)}
+              option={option}
+              onVote={handleVote}
               disabled={isVoting}
-              style={{
-                width: '100%',
-                padding: '12px 16px',
-                borderRadius: '8px',
-                border: '1px solid var(--color-border)',
-                backgroundColor: 'var(--color-surface)',
-                color: 'var(--color-text)',
-                fontSize: '14px',
-                fontWeight: 600,
-                textAlign: 'left',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-bg-alt)';
-                e.currentTarget.style.borderColor = 'var(--color-brand)';
-              }}
-              onMouseOut={(e) => {
-                if (!isVoting) {
-                  e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                  e.currentTarget.style.borderColor = 'var(--color-border)';
-                }
-              }}
-            >
-              <span>{option.text}</span>
-              <Vote size={14} style={{ opacity: 0.5 }} />
-            </button>
+            />
           );
         })}
       </div>
 
-      <div style={{
-        marginTop: '16px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        fontSize: '12px',
-        color: 'var(--color-text-secondary)'
-      }}>
-        <span>Total Votes: {totalVotes.toLocaleString()}</span>
-        {poll.hasVoted && (
-          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'green', fontWeight: 500 }}>
-            <CheckCircle size={12} /> Thank you for voting!
-          </span>
-        )}
-      </div>
+      {poll.hasVoted && (
+        <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--color-text-light)' }}>
+          <CheckCircle size={14} style={{ color: '#059669' }} />
+          <span>You have voted. Total votes: {totalVotes.toLocaleString()}</span>
+        </div>
+      )}
     </div>
   );
 }

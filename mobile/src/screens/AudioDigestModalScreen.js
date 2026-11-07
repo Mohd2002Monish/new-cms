@@ -1,0 +1,463 @@
+import React from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Image,
+  ActivityIndicator,
+} from 'react-native';
+import {
+  ChevronDown,
+  Play,
+  Pause,
+  SkipForward,
+  SkipBack,
+  RotateCcw,
+  Volume2,
+  Globe,
+} from 'lucide-react-native';
+import { useTheme } from '../context/ThemeContext';
+import { useAudioPlaylist } from '../context/AudioPlaylistContext';
+import AudioVisualizerBar from '../components/AudioVisualizerBar';
+import { formatDuration } from '../utils/formatters';
+
+const SPEEDS = [1.0, 1.25, 1.5, 2.0];
+const LANGUAGES = [
+  { code: 'en', label: 'English' },
+  { code: 'hi', label: 'हिंदी' },
+  { code: 'gu', label: 'ગુજરાતી' },
+];
+
+export default function AudioDigestModalScreen({ navigation }) {
+  const { colors, typography } = useTheme();
+  const {
+    playlist,
+    currentIndex,
+    currentStory,
+    isPlaying,
+    isLoadingAudio,
+    playbackSpeed,
+    audioLanguage,
+    positionMillis,
+    durationMillis,
+    playPause,
+    playNext,
+    playPrevious,
+    jumpToStory,
+    changePlaybackSpeed,
+    changeLanguage,
+    seekTo,
+    setIsFullPlayerVisible,
+  } = useAudioPlaylist();
+
+  const handleClose = () => {
+    setIsFullPlayerVisible(false);
+    if (navigation?.goBack) navigation.goBack();
+  };
+
+  const currentSeconds = Math.floor(positionMillis / 1000);
+  const totalSeconds = Math.floor(durationMillis / 1000) || 60;
+  const progressRatio = Math.min(1, Math.max(0, positionMillis / (durationMillis || 1)));
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Top Header Navigation */}
+      <View style={[styles.navHeader, { borderBottomColor: colors.borderLight }]}>
+        <TouchableOpacity onPress={handleClose} style={styles.navButton}>
+          <ChevronDown size={26} color={colors.text} />
+        </TouchableOpacity>
+
+        <View style={styles.navTitleContainer}>
+          <Text style={[styles.navSubtitle, { color: colors.primary }]}>DAILY AUDIO BRIEFING</Text>
+          <Text style={[styles.navTrackCount, { color: colors.textMuted }]}>
+            {playlist.length > 0 ? `Story ${currentIndex + 1} of ${playlist.length}` : 'Audio Player'}
+          </Text>
+        </View>
+
+        <View style={styles.navRight}>
+          <AudioVisualizerBar isPlaying={isPlaying} color={colors.primary} />
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Story Hero Image */}
+        <View style={styles.imageContainer}>
+          {currentStory?.featuredImage ? (
+            <Image source={{ uri: currentStory.featuredImage }} style={styles.storyImage} resizeMode="cover" />
+          ) : (
+            <View style={[styles.imagePlaceholder, { backgroundColor: colors.surfaceHighlight }]}>
+              <Volume2 size={44} color={colors.primary} />
+            </View>
+          )}
+
+          <View style={[styles.categoryBadge, { backgroundColor: colors.primary }]}>
+            <Text style={styles.categoryBadgeText}>
+              {currentStory?.category?.name || 'Top News'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Story Title */}
+        <Text style={[styles.headline, { color: colors.text, fontFamily: typography.fontSerif }]}>
+          {currentStory?.title || 'Loading next story...'}
+        </Text>
+
+        <Text style={[styles.authorMeta, { color: colors.textMuted }]}>
+          {`By ${currentStory?.author?.name || 'The Daily Chronicle'} • Edition Briefing`}
+        </Text>
+
+        {/* Audio Timeline Scrubber */}
+        <View style={styles.scrubberContainer}>
+          <View style={[styles.scrubberTrack, { backgroundColor: colors.surfaceHighlight }]}>
+            <View style={[styles.scrubberProgress, { width: `${progressRatio * 100}%`, backgroundColor: colors.primary }]} />
+          </View>
+          <View style={styles.timeRow}>
+            <Text style={[styles.timeText, { color: colors.textMuted }]}>{formatDuration(currentSeconds)}</Text>
+            <Text style={[styles.timeText, { color: colors.textMuted }]}>{formatDuration(totalSeconds)}</Text>
+          </View>
+        </View>
+
+        {/* Playback Controls */}
+        <View style={styles.controlsRow}>
+          <TouchableOpacity
+            style={styles.secondaryControl}
+            onPress={() => seekTo(Math.max(0, positionMillis - 10000))}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <RotateCcw size={22} color={colors.text} />
+            <Text style={[styles.seekBadge, { color: colors.textMuted }]}>10s</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.secondaryControl}
+            onPress={playPrevious}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <SkipBack size={26} color={colors.text} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.mainPlayButton, { backgroundColor: colors.primary }]}
+            onPress={playPause}
+            activeOpacity={0.85}
+          >
+            {isLoadingAudio ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : isPlaying ? (
+              <Pause size={28} color="#ffffff" />
+            ) : (
+              <Play size={28} color="#ffffff" fill="#ffffff" style={{ marginLeft: 3 }} />
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.secondaryControl}
+            onPress={playNext}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <SkipForward size={26} color={colors.text} />
+          </TouchableOpacity>
+
+          {/* Speed Selector Pill */}
+          <TouchableOpacity
+            style={[styles.speedPill, { borderColor: colors.border }]}
+            onPress={() => {
+              const nextIndex = (SPEEDS.indexOf(playbackSpeed) + 1) % SPEEDS.length;
+              changePlaybackSpeed(SPEEDS[nextIndex]);
+            }}
+          >
+            <Text style={[styles.speedText, { color: colors.text }]}>{playbackSpeed}x</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Language Selection Row */}
+        <View style={[styles.languageBar, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+          <View style={styles.langLeft}>
+            <Globe size={16} color={colors.textSecondary} />
+            <Text style={[styles.langLabel, { color: colors.textSecondary }]}>Narration Language:</Text>
+          </View>
+          <View style={styles.langButtons}>
+            {LANGUAGES.map((l) => (
+              <TouchableOpacity
+                key={l.code}
+                style={[
+                  styles.langBtn,
+                  audioLanguage === l.code && { backgroundColor: colors.accent },
+                ]}
+                onPress={() => changeLanguage(l.code)}
+              >
+                <Text
+                  style={[
+                    styles.langBtnText,
+                    { color: audioLanguage === l.code ? '#ffffff' : colors.text },
+                  ]}
+                >
+                  {l.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Playlist Queue (Top 20-30 Stories) */}
+        <View style={styles.queueSection}>
+          <Text style={[styles.queueHeaderTitle, { color: colors.text, fontFamily: typography.fontSerif }]}>
+            Today's Briefing Lineup ({playlist.length} Stories)
+          </Text>
+
+          {playlist.map((story, idx) => {
+            const isSelected = idx === currentIndex;
+            return (
+              <TouchableOpacity
+                key={story._id || story.slug || idx}
+                style={[
+                  styles.queueItem,
+                  {
+                    backgroundColor: isSelected ? colors.surfaceHighlight : 'transparent',
+                    borderBottomColor: colors.borderLight,
+                  },
+                ]}
+                onPress={() => jumpToStory(idx)}
+              >
+                <View style={styles.queueIndexBox}>
+                  {isSelected && isPlaying ? (
+                    <AudioVisualizerBar isPlaying={true} color={colors.primary} />
+                  ) : (
+                    <Text style={[styles.queueIndexText, { color: isSelected ? colors.primary : colors.textMuted }]}>
+                      {idx + 1}
+                    </Text>
+                  )}
+                </View>
+
+                <View style={styles.queueTextContainer}>
+                  <Text
+                    style={[
+                      styles.queueStoryTitle,
+                      { color: isSelected ? colors.primary : colors.text, fontWeight: isSelected ? '700' : '500' },
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {story.title}
+                  </Text>
+                  <Text style={[styles.queueStoryCategory, { color: colors.textMuted }]}>
+                    {story.category?.name || 'General'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  navHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+  },
+  navButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+  },
+  navTitleContainer: {
+    alignItems: 'center',
+  },
+  navSubtitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  navTrackCount: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  navRight: {
+    width: 40,
+    alignItems: 'flex-end',
+  },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 60,
+  },
+  imageContainer: {
+    width: '100%',
+    height: 220,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 16,
+    position: 'relative',
+  },
+  storyImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryBadge: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  categoryBadgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  headline: {
+    fontSize: 20,
+    fontWeight: '700',
+    lineHeight: 28,
+    marginBottom: 6,
+  },
+  authorMeta: {
+    fontSize: 13,
+    marginBottom: 20,
+  },
+  scrubberContainer: {
+    marginBottom: 20,
+  },
+  scrubberTrack: {
+    height: 4,
+    borderRadius: 2,
+    width: '100%',
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  scrubberProgress: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  timeText: {
+    fontSize: 12,
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+    paddingHorizontal: 10,
+  },
+  mainPlayButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+  },
+  secondaryControl: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  seekBadge: {
+    fontSize: 9,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  speedPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  speedText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  languageBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 24,
+  },
+  langLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  langLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  langButtons: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  langBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  langBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  queueSection: {
+    marginTop: 8,
+  },
+  queueHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  queueItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderRadius: 6,
+  },
+  queueIndexBox: {
+    width: 30,
+    alignItems: 'center',
+  },
+  queueIndexText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  queueTextContainer: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  queueStoryTitle: {
+    fontSize: 14,
+    lineHeight: 18,
+    marginBottom: 2,
+  },
+  queueStoryCategory: {
+    fontSize: 11,
+  },
+});
+

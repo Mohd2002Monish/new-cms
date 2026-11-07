@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { publicApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import DashboardCard from './DashboardCard';
-import { Sparkles } from 'lucide-react';
 
 export default function ForYouRail() {
   const { user } = useAuth();
@@ -80,9 +79,6 @@ export default function ForYouRail() {
       <div className="rail-header">
         <div className="rail-header-left">
           <div className="rail-accent-bar" style={{ backgroundColor: '#dc2626' }} aria-hidden="true" />
-          <div className="rail-icon" style={{ color: '#dc2626' }} aria-hidden="true">
-            <Sparkles size={18} />
-          </div>
           <h2 id="rail-for-you" className="rail-title">
             Recommended For You
           </h2>
