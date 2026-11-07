@@ -24,21 +24,23 @@ const requireSecret = (name) => {
   const value = process.env[name];
   const missing = !value || PLACEHOLDER_SECRETS.has(value) || value.length < 32;
   if (!missing) return value;
-  if (isProduction) {
+  if (isProduction && !process.env.VERCEL) {
     throw new Error(
       `FATAL: ${name} is missing, a known placeholder, or shorter than 32 chars. ` +
       `Set a strong random value (e.g. \`openssl rand -hex 32\`) before starting in production.`
     );
   }
   console.warn(
-    `[env] WARNING: ${name} is missing or weak — using a random per-boot secret. ` +
-    `All tokens will be invalidated on restart. Set ${name} in backend/.env.`
+    `[env] WARNING: ${name} is missing or weak — using fallback random key. ` +
+    `Configure ${name} in Vercel project environment variables.`
   );
   return crypto.randomBytes(48).toString('hex');
 };
 
-if (isProduction && !process.env.MONGO_URI) {
+if (isProduction && !process.env.MONGO_URI && !process.env.VERCEL) {
   throw new Error('FATAL: MONGO_URI is not set.');
+} else if (!process.env.MONGO_URI) {
+  console.warn('[env] WARNING: MONGO_URI is not configured in Vercel environment variables.');
 }
 
 export const env = {

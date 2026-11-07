@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
 
 import { env } from './src/config/env.js';
+import { connectDB } from './src/config/db.js';
 
 import authRoutes from './src/routes/auth.js';
 import userRoutes from './src/routes/users.js';
@@ -23,6 +24,16 @@ import settingsRoutes from './src/routes/settings.js';
 import { globalApiLimiter } from './src/middleware/rateLimiter.js';
 
 const app = express();
+
+// On Vercel Serverless, internal rewrites (e.g. /(.*) -> /api/index.js) can set req.url
+// to the rewritten destination path. Restore the client's actual requested path.
+app.use((req, res, next) => {
+  const matched = req.headers['x-matched-path'] || req.headers['x-forwarded-url'];
+  if (matched && (req.url === '/api/index.js' || req.url === '/api/index' || req.url === '/api')) {
+    req.url = matched;
+  }
+  next();
+});
 
 // Behind a reverse proxy / CDN, req.ip must resolve to the real client IP
 // for rate limiting and audit logs to work per-user.
@@ -54,17 +65,16 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (e.g., curl, Postman, same-origin SSR)
-    // or allowed origins, or any localhost / 127.0.0.1 port in development
-    if (
-      !origin ||
-      allowedOrigins.includes(origin) ||
-      (env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))
-    ) {
-      callback(null, true);
-    } else {
-      callback(new Error(`CORS: origin '${origin}' not allowed`));
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
     }
+    try {
+      const hostname = new URL(origin).hostname;
+      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.vercel.app')) {
+        return callback(null, true);
+      }
+    } catch (_) {}
+    return callback(new Error(`CORS: origin '${origin}' not allowed`));
   },
   credentials: true,
 }));
@@ -88,8 +98,23 @@ app.use(mongoSanitize());
 app.use('/api', globalApiLimiter);
 
 // Health check
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', message: 'News CMS API is running' });
+app.get(['/', '/health', '/api/health'], (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    message: 'News CMS API is running',
+    environment: env.NODE_ENV,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Ensure MongoDB is connected for API routes (cached across serverless invocations)
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+  } catch (err) {
+    console.error('[serverless-db] Connection error:', err.message);
+  }
+  next();
 });
 
 // Route handlers

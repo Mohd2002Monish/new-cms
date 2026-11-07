@@ -5,10 +5,18 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Logs directory inside backend/logs
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+// Logs directory inside backend/logs (only in non-serverless environments)
 const logsDir = path.resolve(__dirname, '../../logs');
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir, { recursive: true });
+if (!isServerless) {
+  try {
+    if (!fs.existsSync(logsDir)) {
+      fs.mkdirSync(logsDir, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('[logger] Failed to create logs directory, operating in console-only mode:', err.message);
+  }
 }
 
 const COMBINED_LOG_PATH = path.join(logsDir, 'combined.log');
@@ -21,6 +29,7 @@ const MAX_LOG_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB per log file
  * Append formatted log line to file safely with size rotation.
  */
 function appendToFile(filePath, message) {
+  if (isServerless) return;
   try {
     // Prevent unlimited log file expansion
     if (fs.existsSync(filePath)) {
