@@ -1288,6 +1288,10 @@ export const unsubscribeUser = async (req, res, next) => {
  */
 export const getGtmConfig = async (req, res, next) => {
   try {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('CDN-Cache-Control', 'no-store');
+    res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+
     const setting = await SystemSetting.findOne({ key: 'gtm' }).lean();
     const config = setting?.value || {};
     const containerId = (config.containerId || process.env.GTM_CONTAINER_ID || '').trim().toUpperCase();

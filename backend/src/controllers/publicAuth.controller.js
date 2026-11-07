@@ -418,6 +418,9 @@ export const resetPassword = async (req, res, next) => {
  */
 export const getGoogleAuthConfig = async (req, res, next) => {
   try {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('CDN-Cache-Control', 'no-store');
+    res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
     const setting = await SystemSetting.findOne({ key: 'google_oauth' }).lean();
     const config = setting?.value || {};
     res.json({
