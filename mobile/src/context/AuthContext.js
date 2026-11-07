@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import storage from '../utils/storage';
 import authApi from '../api/authApi';
+import { setAuthToken } from '../api/client';
+import { safeJsonParse } from '../utils/formatters';
 
 const AuthContext = createContext(null);
 
@@ -17,9 +19,11 @@ export function AuthProvider({ children }) {
         const savedToken = await storage.getItem('reader_token');
         const savedBookmarks = await storage.getItem('reader_bookmarks');
         if (savedBookmarks) {
-          setBookmarks(JSON.parse(savedBookmarks));
+          const parsed = safeJsonParse(savedBookmarks, []);
+          setBookmarks(Array.isArray(parsed) ? parsed : []);
         }
         if (savedToken) {
+          setAuthToken(savedToken);
           setToken(savedToken);
           const profile = await authApi.getProfile();
           if (profile) {
@@ -42,6 +46,7 @@ export function AuthProvider({ children }) {
   const loginPassword = async ({ email, password }) => {
     const res = await authApi.loginPassword({ email, password });
     if (res?.success && res.token) {
+      setAuthToken(res.token);
       setToken(res.token);
       setUser(res.data?.user || res.data || { email });
       await storage.setItem('reader_token', res.token);
@@ -53,6 +58,7 @@ export function AuthProvider({ children }) {
   const loginOtp = async ({ email, otp }) => {
     const res = await authApi.loginOtp({ email, otp });
     if (res?.success && res.token) {
+      setAuthToken(res.token);
       setToken(res.token);
       setUser(res.data?.user || res.data || { email });
       await storage.setItem('reader_token', res.token);
@@ -68,6 +74,7 @@ export function AuthProvider({ children }) {
   const register = async ({ name, email, password }) => {
     const res = await authApi.register({ name, email, password });
     if (res?.success && res.token) {
+      setAuthToken(res.token);
       setToken(res.token);
       setUser(res.data?.user || res.data || { name, email });
       await storage.setItem('reader_token', res.token);
@@ -77,6 +84,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
+    setAuthToken(null);
     setUser(null);
     setToken(null);
     await storage.removeItem('reader_token');

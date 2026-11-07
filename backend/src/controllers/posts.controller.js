@@ -11,6 +11,18 @@ import { clearPublicArticlesCache } from '../services/cache.service.js';
 
 // ─── Validation Schemas ──────────────────────────────────────────────────────
 
+const audioLangItemSchema = Joi.object({
+  url: Joi.string().optional().allow(null, ''),
+  publicId: Joi.string().optional().allow(null, ''),
+  duration: Joi.number().optional().allow(null),
+}).optional().allow(null);
+
+const audioNarrationsSchema = Joi.object({
+  en: audioLangItemSchema,
+  hi: audioLangItemSchema,
+  gu: audioLangItemSchema,
+}).optional().allow(null);
+
 const createPostSchema = Joi.object({
   title: Joi.string().min(3).max(200).required(),
   language: Joi.string().valid(...SUPPORTED_LANGUAGES).optional(),
@@ -44,6 +56,7 @@ const createPostSchema = Joi.object({
   coAuthors: Joi.array().items(Joi.string().hex().length(24)).optional(),
   status: Joi.string().valid('draft', 'live', 'pending_approval').optional(),
   isLiveBlog: Joi.boolean().optional(),
+  audioNarrations: audioNarrationsSchema,
 });
 
 const updatePostSchema = Joi.object({
@@ -79,6 +92,7 @@ const updatePostSchema = Joi.object({
   coAuthors: Joi.array().items(Joi.string().hex().length(24)).optional(),
   status: Joi.string().valid('draft', 'live', 'pending_approval').optional(),
   isLiveBlog: Joi.boolean().optional(),
+  audioNarrations: audioNarrationsSchema,
 });
 
 const rejectSchema = Joi.object({

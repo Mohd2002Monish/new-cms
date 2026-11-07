@@ -93,7 +93,7 @@ export default function ProfileScreen({ navigation }) {
       {/* Reading Stats Row */}
       <View style={[styles.statsRow, { borderColor: colors.border }]}>
         <View style={styles.statBox}>
-          <Text style={[styles.statNumber, { color: colors.text }]}>{bookmarks.length}</Text>
+          <Text style={[styles.statNumber, { color: colors.text }]}>{(bookmarks && bookmarks.length) || 0}</Text>
           <Text style={[styles.statLabel, { color: colors.textMuted }]}>Saved Stories</Text>
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.borderLight }]} />

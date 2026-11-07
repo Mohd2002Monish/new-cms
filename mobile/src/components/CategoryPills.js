@@ -5,7 +5,8 @@ import { useTheme } from '../context/ThemeContext';
 export default function CategoryPills({ categories = [], selectedSlug = 'all', onSelectCategory }) {
   const { colors } = useTheme();
 
-  const allItems = [{ slug: 'all', name: 'Top Headlines' }, ...categories];
+  const safeCategories = Array.isArray(categories) ? categories : [];
+  const allItems = [{ slug: 'all', name: 'Top Headlines' }, ...safeCategories];
 
   return (
     <ScrollView

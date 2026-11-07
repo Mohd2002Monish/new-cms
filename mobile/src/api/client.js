@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
 import storage from '../utils/storage';
+import logger from '../utils/logger';
 
 // Production Vercel live backend URL with local fallback
 const DEFAULT_URL =
@@ -32,22 +33,42 @@ export function getBaseUrl() {
 }
 
 const client = axios.create({
-  timeout: 12000,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
   },
 });
 
-// Dynamic baseURL interceptor
+let inMemoryToken = null;
+
+export function setAuthToken(token) {
+  inMemoryToken = token;
+}
+
+// Dynamic baseURL and fast in-memory token lookup
 client.interceptors.request.use(async (config) => {
   config.baseURL = getBaseUrl();
-  const token = await storage.getItem('reader_token');
+  const token = inMemoryToken || (await storage.getItem('reader_token'));
   if (token) {
+    if (!inMemoryToken) inMemoryToken = token;
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
+
+// Response & error logger interceptors
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error.response?.status || 'NO_RESPONSE';
+    const method = error.config?.method?.toUpperCase() || 'REQ';
+    const url = error.config?.url || '';
+    const msg = error.response?.data?.message || error.message;
+    logger.error('API_ERR', `${method} ${url} [${status}]: ${msg}`);
+    return Promise.reject(error);
+  }
+);
 
 export default client;
 

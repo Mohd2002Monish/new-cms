@@ -22,6 +22,7 @@ export default function BottomTabs({ navigation }) {
 
   return (
     <Tab.Navigator
+      detachInactiveScreens={false}
       screenOptions={{
         headerShown: false,
         tabBarStyle: {

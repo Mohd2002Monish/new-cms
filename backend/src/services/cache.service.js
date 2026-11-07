@@ -121,6 +121,12 @@ export function cacheRoute(ttlSeconds = 60) {
     // Only cache GET requests
     if (req.method !== 'GET') return next();
 
+    // Directives for Vercel Edge CDN & downstream proxies
+    const edgeTtl = Math.max(ttlSeconds, 120);
+    res.setHeader('Cache-Control', `public, max-age=${Math.min(30, ttlSeconds)}, s-maxage=${edgeTtl}, stale-while-revalidate=600`);
+    res.setHeader('Vercel-CDN-Cache-Control', `public, s-maxage=${edgeTtl}, stale-while-revalidate=600`);
+    res.setHeader('CDN-Cache-Control', `public, s-maxage=${edgeTtl}, stale-while-revalidate=600`);
+
     // Key format: public:/api/public/articles?page=1&lang=en...
     const cacheKey = `public:${req.originalUrl || req.url}`;
 
@@ -128,7 +134,6 @@ export function cacheRoute(ttlSeconds = 60) {
       const cachedData = await getCache(cacheKey);
       if (cachedData) {
         res.setHeader('X-Cache', 'HIT');
-        res.setHeader('Cache-Control', `public, max-age=${ttlSeconds}, stale-while-revalidate=300`);
         return res.json(cachedData);
       }
 
@@ -142,7 +147,6 @@ export function cacheRoute(ttlSeconds = 60) {
           });
         }
         res.setHeader('X-Cache', 'MISS');
-        res.setHeader('Cache-Control', `public, max-age=${ttlSeconds}, stale-while-revalidate=300`);
         return originalJson(body);
       };
 

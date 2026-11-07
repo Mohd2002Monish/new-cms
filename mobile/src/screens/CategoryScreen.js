@@ -18,7 +18,8 @@ export default function CategoryScreen({ navigation }) {
         const list = await newsApi.getCategories();
         setCategories(list || []);
         if (list && list.length > 0) {
-          setSelectedCategory(list[0].slug);
+          const preferred = list.find((c) => c.slug === 'technology') || list[0];
+          setSelectedCategory(preferred.slug);
         }
       } catch (e) {
         console.warn('Failed to load categories:', e?.message);
@@ -68,6 +69,11 @@ export default function CategoryScreen({ navigation }) {
         <FlatList
           data={articles}
           keyExtractor={(item, index) => item._id || item.slug || String(index)}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={5}
+          removeClippedSubviews={true}
+          updateCellsBatchingPeriod={50}
           renderItem={({ item }) => (
             <ArticleCard
               article={item}

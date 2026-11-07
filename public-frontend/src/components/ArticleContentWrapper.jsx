@@ -178,6 +178,7 @@ export default function ArticleContentWrapper({ initialArticle }) {
           language={article.language || 'en'}
           articleId={article._id || article.slug}
           title={article.title}
+          audioNarrations={article.audioNarrations}
         />
       )}
 

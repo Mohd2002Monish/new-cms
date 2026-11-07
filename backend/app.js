@@ -52,7 +52,8 @@ import logger from './src/services/logger.service.js';
 
 // Middlewares
 // Allowed origins: admin panel (Vite) + public portal (Next.js)
-const allowedOrigins = [
+const allowedOrigins
+  = [
   process.env.CLIENT_URL || 'http://localhost:5173', // Admin panel
   process.env.PUBLIC_FRONTEND_URL || 'http://localhost:3000', // Public portal
   'http://localhost:3000',
@@ -62,6 +63,12 @@ const allowedOrigins = [
   'http://127.0.0.1:3001',
   'http://127.0.0.1:5173',
 ];
+
+// Public endpoints are openly accessible without credentials, enabling edge caching on Vercel CDN
+app.use('/api/public', cors({
+  origin: '*',
+  credentials: false,
+}));
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -111,10 +118,14 @@ app.get(['/', '/health', '/api/health'], (req, res) => {
 app.use(async (req, res, next) => {
   try {
     await connectDB();
+    next();
   } catch (err) {
     console.error('[serverless-db] Connection error:', err.message);
+    res.status(503).json({
+      success: false,
+      message: 'Database service is initializing or temporarily unavailable. Please retry.',
+    });
   }
-  next();
 });
 
 // Route handlers

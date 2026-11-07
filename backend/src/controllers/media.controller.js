@@ -32,6 +32,8 @@ export const getUploadSignature = (req, res) => {
 
     const signature = cloudinary.utils.api_sign_request(paramsToSign, env.CLOUDINARY_API_SECRET);
 
+    const resourceType = req.body.fileType === 'audio' || req.body.resourceType === 'video' ? 'video' : 'image';
+
     res.json({
       success: true,
       data: {
@@ -40,6 +42,7 @@ export const getUploadSignature = (req, res) => {
         cloud_name: env.CLOUDINARY_CLOUD_NAME,
         api_key: env.CLOUDINARY_API_KEY,
         folder,
+        resourceType,
       },
     });
   } catch (error) {

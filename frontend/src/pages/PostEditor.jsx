@@ -14,6 +14,7 @@ import DOMPurify from 'dompurify';
 import { CommentMark } from '../extensions/CommentMark.js';
 import { PollExtension } from '../extensions/PollExtension.jsx';
 import MediaLibrary from '../components/MediaLibrary.jsx';
+import AudioNarrationsManager from '../components/AudioNarrationsManager.jsx';
 
 // ─── Toolbar Button ───────────────────────────────────────────────────────────
 
@@ -682,6 +683,11 @@ export default function PostEditor() {
     priority: 'normal',
     breakingExpiresAt: '',
     breakingExpiresTime: '00:00',
+    audioNarrations: {
+      en: { url: '', duration: 0 },
+      hi: { url: '', duration: 0 },
+      gu: { url: '', duration: 0 },
+    },
   });
 
   // ─── Tiptap editor ──────────────────────────────────────────────────────────
@@ -747,6 +753,11 @@ export default function PostEditor() {
             priority: p.priority || 'normal',
             breakingExpiresAt: p.breakingExpiresAt ? new Date(p.breakingExpiresAt).toISOString().slice(0, 10) : '',
             breakingExpiresTime: p.breakingExpiresAt ? new Date(p.breakingExpiresAt).toISOString().slice(11, 16) : '00:00',
+            audioNarrations: {
+              en: { url: p.audioNarrations?.en?.url || '', duration: p.audioNarrations?.en?.duration || 0 },
+              hi: { url: p.audioNarrations?.hi?.url || '', duration: p.audioNarrations?.hi?.duration || 0 },
+              gu: { url: p.audioNarrations?.gu?.url || '', duration: p.audioNarrations?.gu?.duration || 0 },
+            },
           });
           fetchRevisions();
           fetchComments();
@@ -958,6 +969,7 @@ export default function PostEditor() {
         ? { url: meta.featuredImageUrl, alt: meta.title }
         : undefined,
       isLiveBlog: meta.isLiveBlog,
+      audioNarrations: meta.audioNarrations,
     };
 
     if (user?.role !== 'editor') {
@@ -1659,6 +1671,14 @@ export default function PostEditor() {
                   </div>
                 </div>
             </div>
+
+            {/* Multi-language Audio Narrations */}
+            <AudioNarrationsManager
+              audioNarrations={meta.audioNarrations}
+              defaultLanguage={meta.language || 'hi'}
+              onChange={(newNarrations) => setMeta((m) => ({ ...m, audioNarrations: newNarrations }))}
+              disabled={!canEdit}
+            />
 
             {/* Priority & Alerts (Managers/Admins only) */}
             {user?.role !== 'editor' && (

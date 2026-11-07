@@ -1,18 +1,25 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, Volume2, Sparkles } from 'lucide-react';
 import { publicApi } from '@/lib/api';
 import AudioPlayButton from './audio/AudioPlayButton';
 import AudioScrubber from './audio/AudioScrubber';
 import AudioSpeedSelector from './audio/AudioSpeedSelector';
-import AudioLanguageSelector, { LANGUAGE_CONFIGS } from './audio/AudioLanguageSelector';
+import { LANGUAGE_CONFIGS } from './audio/AudioLanguageSelector';
 import AudioPlayerStyles from './audio/AudioPlayerStyles';
 
 /**
- * AudioPlayer — Text-to-Speech audio reader with server TTS & browser fallback
+ * AudioPlayer — Multi-language News Narration Player
+ * Automatically plays editorial audio narration or language-matched TTS for the news language.
  */
-export default function AudioPlayer({ text, language = 'en', articleId = null, title = '' }) {
+export default function AudioPlayer({
+  text,
+  language = 'en',
+  articleId = null,
+  title = '',
+  audioNarrations = null,
+}) {
   const initialLang = (language || 'en').toLowerCase().slice(0, 2);
   const normalizedLang = ['gu', 'hi', 'en'].includes(initialLang) ? initialLang : 'en';
 
@@ -117,6 +124,20 @@ export default function AudioPlayer({ text, language = 'en', articleId = null, t
   };
 
   const handlePlay = async () => {
+    // 1. Check if an actual human voice recording was uploaded for this news language
+    const uploadedAudio = audioNarrations?.[selectedLang]?.url;
+    if (uploadedAudio) {
+      setAudioSrc(uploadedAudio);
+      setIsCached(true);
+      if (audioRef.current) {
+        audioRef.current.src = uploadedAudio;
+        audioRef.current.playbackRate = speed;
+        audioRef.current.play();
+        setIsPlaying(true);
+      }
+      return;
+    }
+
     if (!text && !title) return;
 
     if (useFallbackWebSpeech) {
@@ -224,9 +245,10 @@ export default function AudioPlayer({ text, language = 'en', articleId = null, t
 
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
   const currentLangConfig = LANGUAGE_CONFIGS.find((l) => l.code === selectedLang) || LANGUAGE_CONFIGS[2];
-  const listenLabel = isCached
-    ? `Listen to Narration (${currentLangConfig.shortLabel})`
-    : `Audio Narration (${currentLangConfig.shortLabel})`;
+  const hasUploadedAudio = !!audioNarrations?.[selectedLang]?.url;
+  const listenLabel = hasUploadedAudio
+    ? `Actual Voice Narration (${currentLangConfig.nativeName || currentLangConfig.shortLabel})`
+    : `Audio Narration (${currentLangConfig.nativeName || currentLangConfig.shortLabel})`;
 
   return (
     <>
@@ -285,10 +307,39 @@ export default function AudioPlayer({ text, language = 'en', articleId = null, t
             </button>
           )}
 
-          <AudioLanguageSelector
-            selectedLang={selectedLang}
-            onSelectLang={setSelectedLang}
-          />
+          {/* Automatic News Language Badge (No manual model confusion) */}
+          <div
+            className="auto-lang-badge"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 10px',
+              borderRadius: '999px',
+              fontSize: '11px',
+              fontWeight: '700',
+              backgroundColor: 'rgba(0,0,0,0.05)',
+              color: 'inherit',
+              letterSpacing: '0.02em',
+            }}
+            title={`Audio is automatically set to ${currentLangConfig.label} based on the news language.`}
+          >
+            <span>{currentLangConfig.flag}</span>
+            <span>{currentLangConfig.nativeName || currentLangConfig.label}</span>
+            {hasUploadedAudio && (
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: '#10b981',
+                  marginLeft: '2px',
+                }}
+                title="Actual Voice Recording Available"
+              />
+            )}
+          </div>
 
           <AudioSpeedSelector
             speed={speed}

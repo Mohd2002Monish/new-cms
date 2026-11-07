@@ -22,7 +22,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useAudioPlaylist } from '../context/AudioPlaylistContext';
 import newsApi from '../api/newsApi';
-import { formatTimeAgo, getEstimatedReadTime, stripHtml } from '../utils/formatters';
+import { formatTimeAgo, getEstimatedReadTime, stripHtml, getImageUrl } from '../utils/formatters';
 import ArticleCard from '../components/ArticleCard';
 
 export default function ArticleDetailScreen({ route, navigation }) {
@@ -77,8 +77,9 @@ export default function ArticleDetailScreen({ route, navigation }) {
   }
 
   const bookmarked = isBookmarked(article.slug);
-  const readTime = getEstimatedReadTime(article.content);
-  const cleanBody = stripHtml(article.content);
+  const readTime = getEstimatedReadTime(article.contentHtml || article.content);
+  const cleanBody = stripHtml(article.contentHtml || article.content);
+  const imageUrl = getImageUrl(article.featuredImage);
 
   const handleShare = () => {
     Share.share({
@@ -168,8 +169,8 @@ export default function ArticleDetailScreen({ route, navigation }) {
         </TouchableOpacity>
 
         {/* Featured Image */}
-        {article.featuredImage ? (
-          <Image source={{ uri: article.featuredImage }} style={styles.featuredImage} resizeMode="cover" />
+        {imageUrl ? (
+          <Image source={{ uri: imageUrl }} style={styles.featuredImage} resizeMode="cover" />
         ) : null}
 
         {/* Excerpt Lead */}

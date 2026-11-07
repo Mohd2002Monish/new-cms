@@ -123,6 +123,24 @@ const postSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  // Multi-language human audio narrations uploaded by editorial staff
+  audioNarrations: {
+    en: {
+      url: { type: String, default: null },
+      publicId: { type: String, default: null },
+      duration: { type: Number, default: 0 },
+    },
+    hi: {
+      url: { type: String, default: null },
+      publicId: { type: String, default: null },
+      duration: { type: Number, default: 0 },
+    },
+    gu: {
+      url: { type: String, default: null },
+      publicId: { type: String, default: null },
+      duration: { type: Number, default: 0 },
+    },
+  },
   priority: {
     type: String,
     enum: ['normal', 'high', 'urgent'],

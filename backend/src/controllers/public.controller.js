@@ -51,6 +51,25 @@ async function isRecentView(ip, slug) {
   return false;
 }
 
+// ─── Categories in-memory cache to eliminate repeated Atlas roundtrips ───────
+let categoriesCache = null;
+let categoriesCacheTime = 0;
+const CATEGORIES_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+export async function getActiveCategoriesCached() {
+  if (categoriesCache && Date.now() - categoriesCacheTime < CATEGORIES_CACHE_TTL_MS) {
+    return categoriesCache;
+  }
+  const categories = await Category.find({ isActive: true, deletedAt: null })
+    .sort({ order: 1, name: 1 })
+    .select('name slug description order nameTranslations parentCategory tags')
+    .populate('parentCategory', 'name slug')
+    .lean();
+  categoriesCache = categories;
+  categoriesCacheTime = Date.now();
+  return categories;
+}
+
 // ─── List Published Articles ──────────────────────────────────────────────────
 
 /**
@@ -78,10 +97,13 @@ export const getPublicArticles = async (req, res, next) => {
     if (lang) filter.language = lang;
 
     if (category) {
-      const cat = await Category.findOne({ slug: category, isActive: true });
+      const allActiveCats = await getActiveCategoriesCached();
+      const cat = allActiveCats.find((c) => c.slug === category);
       if (cat) {
         // Include category and its child subcategories
-        const childCats = await Category.find({ parentCategory: cat._id, isActive: true }).select('_id');
+        const childCats = allActiveCats.filter(
+          (c) => c.parentCategory && String(c.parentCategory._id || c.parentCategory) === String(cat._id)
+        );
         const allCatIds = [cat._id, ...childCats.map((c) => c._id)];
         filter.$or = [
           { category: { $in: allCatIds } },
@@ -97,7 +119,8 @@ export const getPublicArticles = async (req, res, next) => {
     }
 
     if (subCategory) {
-      const subCat = await Category.findOne({ slug: subCategory, isActive: true });
+      const allActiveCats = await getActiveCategoriesCached();
+      const subCat = allActiveCats.find((c) => c.slug === subCategory);
       if (subCat) {
         filter.subCategory = subCat._id;
       } else {
@@ -136,7 +159,7 @@ export const getPublicArticles = async (req, res, next) => {
         .populate('category', 'name slug nameTranslations')
         .populate('subCategory', 'name slug nameTranslations')
         .select(`title slug excerpt featuredImage seo category subCategory tags language
-                 publishedAt updatedAt isBreaking priority readingTimeMinutes views`)
+                 publishedAt updatedAt isBreaking priority readingTimeMinutes views audioNarrations`)
         .lean(),
       Post.countDocuments(filter),
     ]);
@@ -383,11 +406,7 @@ export const incrementArticleView = async (req, res, next) => {
  */
 export const getPublicCategories = async (req, res, next) => {
   try {
-    const categories = await Category.find({ isActive: true, deletedAt: null })
-      .sort({ order: 1, name: 1 })
-      .select('name slug description order nameTranslations parentCategory tags')
-      .populate('parentCategory', 'name slug')
-      .lean();
+    const categories = await getActiveCategoriesCached();
 
     // Convenience: localizedName resolved for the requested language (falls
     // back to the canonical name when no translation exists)

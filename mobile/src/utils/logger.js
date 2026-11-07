@@ -47,8 +47,7 @@ export const logger = {
     const entry = formatLogEntry('INFO', tag, message, data);
     memoryLogs.push(entry);
     if (memoryLogs.length > MAX_LOGS) memoryLogs.shift();
-    console.log(entry.rawText);
-    scheduleSave();
+    if (__DEV__) console.log(entry.rawText);
     return entry;
   },
 
@@ -56,8 +55,7 @@ export const logger = {
     const entry = formatLogEntry('WARN', tag, message, data);
     memoryLogs.push(entry);
     if (memoryLogs.length > MAX_LOGS) memoryLogs.shift();
-    console.warn(entry.rawText);
-    scheduleSave();
+    if (__DEV__) console.warn(entry.rawText);
     return entry;
   },
 
@@ -66,7 +64,7 @@ export const logger = {
     memoryLogs.push(entry);
     if (memoryLogs.length > MAX_LOGS) memoryLogs.shift();
     console.error(entry.rawText);
-    scheduleSave();
+    scheduleSave(); // Only persist to disk when an error occurs
 
     // Persist as last crash if high priority
     try {

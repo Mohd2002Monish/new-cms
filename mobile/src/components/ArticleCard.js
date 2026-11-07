@@ -1,19 +1,35 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Bookmark } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { formatTimeAgo, getEstimatedReadTime } from '../utils/formatters';
+import { formatTimeAgo, getEstimatedReadTime, getImageUrl } from '../utils/formatters';
 
-export default function ArticleCard({ article, onPress, isHero = false }) {
+function ArticleCard({ article, onPress, isHero = false }) {
   const { colors, typography } = useTheme();
   const { isBookmarked, toggleBookmark } = useAuth();
 
   if (!article) return null;
 
   const bookmarked = isBookmarked(article.slug);
-  const readTime = getEstimatedReadTime(article.content);
-  const timeAgo = formatTimeAgo(article.publishedAt || article.createdAt);
+
+  // Memoize heavy text/date calculations so FlatList scrolls smoothly at 60 FPS
+  const readTime = useMemo(
+    () => getEstimatedReadTime(article.content || article.excerpt),
+    [article.content, article.excerpt]
+  );
+
+  const timeAgo = useMemo(
+    () => formatTimeAgo(article.publishedAt || article.createdAt),
+    [article.publishedAt, article.createdAt]
+  );
+
+  // Dynamically request downscaled image: 300px for thumbnails, 800px for hero cards
+  const imageUrl = useMemo(
+    () => getImageUrl(article.featuredImage, { width: isHero ? 800 : 300 }),
+    [article.featuredImage, isHero]
+  );
+
   const categoryName = article.category?.name || 'General';
 
   const handleBookmarkPress = (e) => {
@@ -28,8 +44,8 @@ export default function ArticleCard({ article, onPress, isHero = false }) {
         onPress={onPress}
         activeOpacity={0.88}
       >
-        {article.featuredImage ? (
-          <Image source={{ uri: article.featuredImage }} style={styles.heroImage} resizeMode="cover" />
+        {imageUrl ? (
+          <Image source={{ uri: imageUrl }} style={styles.heroImage} resizeMode="cover" />
         ) : (
           <View style={[styles.heroImagePlaceholder, { backgroundColor: colors.surfaceHighlight }]} />
         )}
@@ -95,8 +111,8 @@ export default function ArticleCard({ article, onPress, isHero = false }) {
         </View>
       </View>
 
-      {article.featuredImage ? (
-        <Image source={{ uri: article.featuredImage }} style={styles.thumbnail} resizeMode="cover" />
+      {imageUrl ? (
+        <Image source={{ uri: imageUrl }} style={styles.thumbnail} resizeMode="cover" />
       ) : (
         <View style={[styles.thumbnailPlaceholder, { backgroundColor: colors.surfaceHighlight }]} />
       )}
@@ -202,4 +218,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
 });
+
+export default React.memo(ArticleCard);
 

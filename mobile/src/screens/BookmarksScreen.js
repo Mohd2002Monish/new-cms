@@ -40,7 +40,7 @@ export default function BookmarksScreen({ navigation }) {
           Saved Library
         </Text>
         <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-          {bookmarks.length} stories saved for offline reading
+          {(bookmarks && bookmarks.length) || 0} stories saved for offline reading
         </Text>
       </View>
 

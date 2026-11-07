@@ -104,28 +104,38 @@ export function AudioPlaylistProvider({ children }) {
     }
 
     const story = list[index];
+    const storyLang = (story.language || languageRef.current || 'en').toLowerCase().slice(0, 2);
+    setAudioLanguage(storyLang);
+    languageRef.current = storyLang;
+
     setCurrentIndex(index);
     setIsLoadingAudio(true);
     await stopCurrentAudio();
 
     try {
-      // 1. Prepare speech text from story headline + excerpt/content
-      const textToSynthesize = [
-        story.title,
-        story.excerpt || stripHtml(story.content || '').slice(0, 800),
-      ].filter(Boolean).join('. ');
+      // 1. Check if actual human audio narration was uploaded for this news language
+      let audioUri = story.audioNarrations?.[storyLang]?.url;
 
-      // 2. Synthesize audio via backend TTS engine
-      const ttsData = await audioApi.synthesizeAudio({
-        text: textToSynthesize,
-        language: languageRef.current,
-        rate: speedRef.current,
-        articleId: story._id || story.id,
-      });
-
-      const audioUri = ttsData?.audioContent;
       if (!audioUri) {
-        throw new Error('No audio content returned from TTS service');
+        // Fallback: Synthesize speech text matching the story's actual language
+        const textToSynthesize = [
+          story.title,
+          story.excerpt || stripHtml(story.contentHtml || story.content || '').slice(0, 800),
+        ].filter(Boolean).join('. ');
+
+        // 2. Synthesize audio via backend TTS engine
+        const ttsData = await audioApi.synthesizeAudio({
+          text: textToSynthesize,
+          language: storyLang,
+          rate: speedRef.current,
+          articleId: story._id || story.id,
+        });
+
+        audioUri = ttsData?.audioContent;
+      }
+
+      if (!audioUri) {
+        throw new Error('No audio content available for this story');
       }
 
       // 3. Play audio on native or web runtime
@@ -148,10 +158,25 @@ export function AudioPlaylistProvider({ children }) {
         await audio.play();
         setIsPlaying(true);
       } else {
-        // React Native Expo-AV
+        // React Native Expo-AV with base64 file caching for Android stability
+        let playableUri = audioUri;
+        if (typeof audioUri === 'string' && audioUri.startsWith('data:')) {
+          try {
+            const FileSystem = require('expo-file-system');
+            const base64Data = audioUri.split(';base64,').pop();
+            const tempFile = `${FileSystem.cacheDirectory}track_${story._id || index}.mp3`;
+            await FileSystem.writeAsStringAsync(tempFile, base64Data, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            playableUri = tempFile;
+          } catch (fsErr) {
+            logger.warn('AudioPlaylist', 'File system caching warning', fsErr);
+          }
+        }
+
         await ensureAudioMode();
         const { sound } = await ExpoAudio.Sound.createAsync(
-          { uri: audioUri },
+          { uri: playableUri },
           { shouldPlay: true, rate: speedRef.current, shouldCorrectPitch: true },
           (status) => {
             if (!status.isLoaded) {

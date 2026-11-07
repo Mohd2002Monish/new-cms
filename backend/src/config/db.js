@@ -1,33 +1,42 @@
 import mongoose from 'mongoose';
 import { env } from './env.js';
 
+let cachedPromise = null;
+
 /**
  * Connect to MongoDB with connection reuse for serverless (Vercel) environments.
+ * Uses a shared cached promise so concurrent cold-start requests wait for the
+ * connection handshake to finish before executing queries.
  */
 export const connectDB = async () => {
-  // Reuse existing connection if already connected (readyState 1) or connecting (readyState 2)
-  if (mongoose.connection.readyState >= 1) {
+  // Return immediately if already fully connected
+  if (mongoose.connection.readyState === 1) {
     return mongoose.connection;
   }
 
-  try {
+  if (!cachedPromise) {
     const uri = env.MONGODB_URI || process.env.MONGO_URI;
     if (!uri) {
       console.warn('Warning: MONGODB_URI is not defined in environment variables.');
       return null;
     }
 
-    const conn = await mongoose.connect(uri, {
-      bufferCommands: false, // Disable command buffering in serverless to prevent hangs on cold starts
+    cachedPromise = mongoose.connect(uri, {
+      bufferCommands: true, // Allow Mongoose to buffer commands during handshake
       serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 2,
+      family: 4, // Force IPv4 to eliminate slow dual-stack DNS timeouts
+    }).then((conn) => {
+      console.log(`MongoDB Connected: ${conn.connection.host}`);
+      return conn;
+    }).catch((error) => {
+      cachedPromise = null;
+      console.error(`MongoDB Connection Error: ${error.message}`);
+      throw error;
     });
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
-    return conn;
-  } catch (error) {
-    console.error(`MongoDB Connection Error: ${error.message}`);
-    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-      process.exit(1);
-    }
-    throw error;
   }
+
+  return cachedPromise;
 };

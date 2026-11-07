@@ -21,7 +21,7 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { useAudioPlaylist } from '../context/AudioPlaylistContext';
 import AudioVisualizerBar from '../components/AudioVisualizerBar';
-import { formatDuration } from '../utils/formatters';
+import { formatDuration, getImageUrl } from '../utils/formatters';
 
 const SPEEDS = [1.0, 1.25, 1.5, 2.0];
 const LANGUAGES = [
@@ -57,9 +57,11 @@ export default function AudioDigestModalScreen({ navigation }) {
     if (navigation?.goBack) navigation.goBack();
   };
 
-  const currentSeconds = Math.floor(positionMillis / 1000);
-  const totalSeconds = Math.floor(durationMillis / 1000) || 60;
-  const progressRatio = Math.min(1, Math.max(0, positionMillis / (durationMillis || 1)));
+  const safePlaylist = Array.isArray(playlist) ? playlist : [];
+  const currentSeconds = Math.floor((Number(positionMillis) || 0) / 1000);
+  const totalSeconds = Math.floor((Number(durationMillis) || 0) / 1000) || 60;
+  const progressRatio = Math.min(1, Math.max(0, (Number(positionMillis) || 0) / (Number(durationMillis) || 1)));
+  const storyImageUrl = getImageUrl(currentStory?.featuredImage);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -72,7 +74,7 @@ export default function AudioDigestModalScreen({ navigation }) {
         <View style={styles.navTitleContainer}>
           <Text style={[styles.navSubtitle, { color: colors.primary }]}>DAILY AUDIO BRIEFING</Text>
           <Text style={[styles.navTrackCount, { color: colors.textMuted }]}>
-            {playlist.length > 0 ? `Story ${currentIndex + 1} of ${playlist.length}` : 'Audio Player'}
+            {safePlaylist.length > 0 ? `Story ${currentIndex + 1} of ${safePlaylist.length}` : 'Audio Player'}
           </Text>
         </View>
 
@@ -84,8 +86,8 @@ export default function AudioDigestModalScreen({ navigation }) {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Story Hero Image */}
         <View style={styles.imageContainer}>
-          {currentStory?.featuredImage ? (
-            <Image source={{ uri: currentStory.featuredImage }} style={styles.storyImage} resizeMode="cover" />
+          {storyImageUrl ? (
+            <Image source={{ uri: storyImageUrl }} style={styles.storyImage} resizeMode="cover" />
           ) : (
             <View style={[styles.imagePlaceholder, { backgroundColor: colors.surfaceHighlight }]}>
               <Volume2 size={44} color={colors.primary} />
@@ -172,42 +174,33 @@ export default function AudioDigestModalScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Language Selection Row */}
+        {/* Story Language Badge (Auto-tuned to news story language) */}
         <View style={[styles.languageBar, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
           <View style={styles.langLeft}>
-            <Globe size={16} color={colors.textSecondary} />
-            <Text style={[styles.langLabel, { color: colors.textSecondary }]}>Narration Language:</Text>
+            <Globe size={15} color={colors.textSecondary} />
+            <Text style={[styles.langLabel, { color: colors.textSecondary }]}>Language:</Text>
+            <View style={[styles.autoLangPill, { backgroundColor: colors.accent }]}>
+              <Text style={styles.autoLangPillText}>
+                {currentStory?.language === 'hi' ? '🇮🇳 Hindi' : currentStory?.language === 'gu' ? '🇮🇳 Gujarati' : '🇬🇧 English'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.langButtons}>
-            {LANGUAGES.map((l) => (
-              <TouchableOpacity
-                key={l.code}
-                style={[
-                  styles.langBtn,
-                  audioLanguage === l.code && { backgroundColor: colors.accent },
-                ]}
-                onPress={() => changeLanguage(l.code)}
-              >
-                <Text
-                  style={[
-                    styles.langBtnText,
-                    { color: audioLanguage === l.code ? '#ffffff' : colors.text },
-                  ]}
-                >
-                  {l.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {currentStory?.audioNarrations?.[currentStory?.language || 'en']?.url ? (
+            <View style={styles.actualVoiceBadge}>
+              <Text style={styles.actualVoiceText}>🎙️ Human Voice</Text>
+            </View>
+          ) : (
+            <Text style={[styles.autoModeHint, { color: colors.textSecondary }]}>Auto-selected</Text>
+          )}
         </View>
 
         {/* Playlist Queue (Top 20-30 Stories) */}
         <View style={styles.queueSection}>
           <Text style={[styles.queueHeaderTitle, { color: colors.text, fontFamily: typography.fontSerif }]}>
-            Today's Briefing Lineup ({playlist.length} Stories)
+            Today's Briefing Lineup ({safePlaylist.length} Stories)
           </Text>
 
-          {playlist.map((story, idx) => {
+          {safePlaylist.map((story, idx) => {
             const isSelected = idx === currentIndex;
             return (
               <TouchableOpacity
@@ -410,18 +403,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  langButtons: {
-    flexDirection: 'row',
-    gap: 6,
+  autoLangPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginLeft: 6,
   },
-  langBtn: {
+  autoLangPillText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  actualVoiceBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
   },
-  langBtnText: {
+  actualVoiceText: {
+    color: '#10b981',
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  autoModeHint: {
+    fontSize: 11,
+    fontWeight: '500',
   },
   queueSection: {
     marginTop: 8,

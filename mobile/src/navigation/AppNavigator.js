@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
 import { useAudioPlaylist } from '../context/AudioPlaylistContext';
 import BottomTabs from './BottomTabs';
@@ -11,15 +11,23 @@ import LoginModalScreen from '../screens/LoginModalScreen';
 import AudioDigestModalScreen from '../screens/AudioDigestModalScreen';
 import FloatingMiniPlayer from '../components/FloatingMiniPlayer';
 
+export const navigationRef = createNavigationContainerRef();
+
 const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
   const { colors, isDarkMode } = useTheme();
-  const { isFullPlayerVisible, setIsFullPlayerVisible } = useAudioPlaylist();
+
+  const handleOpenAudioModal = () => {
+    if (navigationRef.isReady()) {
+      navigationRef.navigate('AudioDigestModal');
+    }
+  };
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <NavigationContainer
+        ref={navigationRef}
         theme={{
           dark: isDarkMode,
           colors: {
@@ -32,7 +40,10 @@ export default function AppNavigator() {
           },
         }}
       >
-        <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade_from_bottom' }}>
+        <Stack.Navigator
+          detachInactiveScreens={false}
+          screenOptions={{ headerShown: false, animation: 'fade_from_bottom' }}
+        >
           <Stack.Screen name="MainTabs" component={BottomTabs} />
           <Stack.Screen
             name="ArticleDetail"
@@ -57,15 +68,8 @@ export default function AppNavigator() {
         </Stack.Navigator>
 
         {/* Global Persistent Floating Mini-Player for continuous audio playback */}
-        <FloatingMiniPlayer onOpenFullPlayer={() => setIsFullPlayerVisible(true)} />
+        <FloatingMiniPlayer onOpenFullPlayer={handleOpenAudioModal} />
       </NavigationContainer>
-
-      {/* Direct fullscreen modal fallback when triggered programmatically */}
-      {isFullPlayerVisible && (
-        <View style={StyleSheet.absoluteFillObject}>
-          <AudioDigestModalScreen />
-        </View>
-      )}
     </View>
   );
 }

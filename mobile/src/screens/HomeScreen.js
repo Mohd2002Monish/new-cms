@@ -6,9 +6,11 @@ import {
   ActivityIndicator,
   Text,
   StyleSheet,
+  TouchableOpacity,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import newsApi from '../api/newsApi';
+import logger from '../utils/logger';
 import HeaderBar from '../components/HeaderBar';
 import DailyBriefingBanner from '../components/DailyBriefingBanner';
 import CategoryPills from '../components/CategoryPills';
@@ -22,33 +24,67 @@ export default function HomeScreen({ navigation }) {
   const [breakingNews, setBreakingNews] = useState([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [errorMessage, setErrorMessage] = useState(null);
 
   // Load initial data
   const loadData = useCallback(async (isRefresh = false) => {
     try {
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+        newsApi.clearCache();
+      } else {
+        setLoading(true);
+      }
+      setErrorMessage(null);
+
+      // Only re-fetch categories and breaking news on refresh or initial startup
+      const fetchCats = isRefresh || categories.length === 0;
+      const fetchBreaking = isRefresh || breakingNews.length === 0;
 
       const [catList, breakingList, articlesRes] = await Promise.all([
-        newsApi.getCategories(),
-        newsApi.getBreakingNews(),
-        newsApi.getArticles({ page: 1, limit: 12, category: selectedCategory }),
+        fetchCats
+          ? newsApi.getCategories('en', isRefresh).catch((err) => {
+              logger.warn('HomeScreen', 'Categories fetch failed', err);
+              return [];
+            })
+          : Promise.resolve(categories),
+        fetchBreaking
+          ? newsApi.getBreakingNews('en', isRefresh).catch((err) => {
+              logger.warn('HomeScreen', 'Breaking news fetch failed', err);
+              return [];
+            })
+          : Promise.resolve(breakingNews),
+        newsApi.getArticles({
+          page: 1,
+          limit: 12,
+          category: selectedCategory,
+          forceRefresh: isRefresh,
+        }).catch((err) => {
+          logger.error('HomeScreen', 'Articles fetch failed', err);
+          setErrorMessage(err?.message || 'Unable to connect to news server');
+          return null;
+        }),
       ]);
 
-      setCategories(catList || []);
-      setBreakingNews(breakingList || []);
-      setArticles(articlesRes?.data || []);
-      setPage(1);
-      setHasMore(!!articlesRes?.pagination?.hasNextPage);
+      if (catList && catList.length > 0) setCategories(catList);
+      if (breakingList && breakingList.length > 0) setBreakingNews(breakingList);
+      if (articlesRes?.data) {
+        setArticles(articlesRes.data);
+        setPage(1);
+        setHasMore(!!articlesRes.pagination?.hasNextPage);
+      }
     } catch (err) {
-      console.warn('Failed to load home news data:', err?.message);
+      logger.error('HomeScreen', 'loadData general error', err);
+      setErrorMessage(err?.message || 'Error loading dispatches');
     } finally {
       setLoading(false);
+      setInitialLoading(false);
       setRefreshing(false);
     }
-  }, [selectedCategory]);
+  }, [selectedCategory, categories.length, breakingNews.length]);
 
   useEffect(() => {
     loadData();
@@ -100,6 +136,11 @@ export default function HomeScreen({ navigation }) {
         }
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
+        updateCellsBatchingPeriod={50}
         ListHeaderComponent={
           <View>
             {/* Breaking News Marquee Strip if present */}
@@ -134,11 +175,13 @@ export default function HomeScreen({ navigation }) {
             )}
 
             {/* Section Divider Header */}
-            <View style={[styles.sectionDivider, { borderBottomColor: colors.borderLight }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: typography.fontSerif }]}>
-                {selectedCategory === 'all' ? 'Latest Reports' : 'Category Feed'}
-              </Text>
-            </View>
+            {articles.length > 0 && (
+              <View style={[styles.sectionDivider, { borderBottomColor: colors.borderLight }]}>
+                <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: typography.fontSerif }]}>
+                  {selectedCategory === 'all' ? 'Latest Reports' : 'Category Feed'}
+                </Text>
+              </View>
+            )}
           </View>
         }
         renderItem={({ item }) => (
@@ -147,6 +190,43 @@ export default function HomeScreen({ navigation }) {
             onPress={() => navigation.navigate('ArticleDetail', { slug: item.slug })}
           />
         )}
+        ListEmptyComponent={
+          initialLoading || loading ? (
+            <View style={styles.stateContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={[styles.stateText, { color: colors.textSecondary }]}>
+                Fetching latest dispatches...
+              </Text>
+            </View>
+          ) : errorMessage ? (
+            <View style={styles.stateContainer}>
+              <Text style={[styles.stateTitle, { color: colors.statusError || '#ef4444' }]}>
+                Connection Issue
+              </Text>
+              <Text style={[styles.stateText, { color: colors.textSecondary }]}>
+                {errorMessage}
+              </Text>
+              <TouchableOpacity
+                style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+                onPress={() => loadData()}
+              >
+                <Text style={styles.retryBtnText}>Tap to Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : !heroArticle ? (
+            <View style={styles.stateContainer}>
+              <Text style={[styles.stateText, { color: colors.textSecondary }]}>
+                No stories available in this section yet.
+              </Text>
+              <TouchableOpacity
+                style={[styles.retryBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderWidth: 1 }]}
+                onPress={() => loadData(true)}
+              >
+                <Text style={[styles.retryBtnText, { color: colors.text }]}>Refresh Feed</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null
+        }
         ListFooterComponent={
           loading && articles.length > 0 ? (
             <View style={styles.loadingFooter}>
@@ -201,6 +281,34 @@ const styles = StyleSheet.create({
   loadingFooter: {
     paddingVertical: 20,
     alignItems: 'center',
+  },
+  stateContainer: {
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stateTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  stateText: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  retryBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  retryBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
 
