@@ -10,7 +10,7 @@ const systemSettingSchema = new mongoose.Schema({
   },
   group: {
     type: String,
-    enum: ['oauth', 'email', 'general', 'security', 'ai'],
+    enum: ['oauth', 'email', 'general', 'security', 'ai', 'analytics'],
     required: true,
     default: 'general',
   },

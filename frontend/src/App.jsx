@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { store } from './app/store.js';
 import { queryClient } from './app/queryClient.js';
 import { bootstrapSession } from './features/auth/authSlice.js';
+import { initAdminGtm } from './utils/gtm.js';
 
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import Layout from './components/Layout.jsx';
@@ -33,6 +34,7 @@ function AppRoutes() {
 
   useEffect(() => {
     dispatch(bootstrapSession());
+    initAdminGtm();
   }, [dispatch]);
 
   return (

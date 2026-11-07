@@ -1,7 +1,11 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api',
+  baseURL:
+    process.env.NEXT_PUBLIC_API_URL ||
+    (process.env.NODE_ENV === 'production'
+      ? 'https://newscrm.vercel.app/api'
+      : 'http://localhost:3030/api'),
   timeout: 10000,
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true, // Allow cookies for refresh tokens
@@ -165,6 +169,10 @@ export const publicApi = {
     api.post('/public/tts/synthesize', data).then(r => r.data),
   getTtsLanguages: () =>
     api.get('/public/tts/languages').then(r => r.data),
+
+  // ─── Google Tag Manager (GTM) ──────────────────────────────────────────────
+  getGtmConfig: () =>
+    api.get('/public/gtm/config').then(r => r.data),
 };
 
 export default api;

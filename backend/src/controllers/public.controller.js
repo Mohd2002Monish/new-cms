@@ -2,6 +2,7 @@ import { Post } from '../models/Post.js';
 import { Category } from '../models/Category.js';
 import { ArticleReaction } from '../models/ArticleReaction.js';
 import { ArticleComment } from '../models/ArticleComment.js';
+import { SystemSetting } from '../models/SystemSetting.js';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
@@ -1275,6 +1276,31 @@ export const unsubscribeUser = async (req, res, next) => {
       success: true,
       isPremiumUser: req.user.isPremiumUser,
       message: 'Successfully unsubscribed from Premium (Mock)!'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/public/gtm/config
+ * Returns public Google Tag Manager configuration for web and apps.
+ */
+export const getGtmConfig = async (req, res, next) => {
+  try {
+    const setting = await SystemSetting.findOne({ key: 'gtm' }).lean();
+    const config = setting?.value || {};
+    const containerId = (config.containerId || process.env.GTM_CONTAINER_ID || '').trim().toUpperCase();
+    const enabled = Boolean(config.enabled) && Boolean(containerId);
+
+    res.json({
+      success: true,
+      data: {
+        enabled,
+        containerId: enabled ? containerId : '',
+        enablePublicWebsite: config.enablePublicWebsite !== false,
+        enableAdminPanel: Boolean(config.enableAdminPanel),
+      },
     });
   } catch (error) {
     next(error);

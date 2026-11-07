@@ -42,6 +42,20 @@ const aiConfigSchema = Joi.object({
   }).default(),
 });
 
+const gtmSchema = Joi.object({
+  containerId: Joi.string()
+    .trim()
+    .pattern(/^GTM-[A-Za-z0-9_-]+$/)
+    .allow('')
+    .default('')
+    .messages({
+      'string.pattern.base': 'Container ID must match the format GTM-XXXXXXX (e.g. GTM-N9K7P2Q)',
+    }),
+  enabled: Joi.boolean().default(false),
+  enablePublicWebsite: Joi.boolean().default(true),
+  enableAdminPanel: Joi.boolean().default(false),
+});
+
 const testSmtpSchema = Joi.object({
   host: Joi.string().required(),
   port: Joi.number().integer().required(),
@@ -73,10 +87,11 @@ function maskValue(val) {
  */
 export const getSettings = async (req, res, next) => {
   try {
-    const [oauthSetting, smtpSetting, aiSetting] = await Promise.all([
+    const [oauthSetting, smtpSetting, aiSetting, gtmSetting] = await Promise.all([
       SystemSetting.findOne({ key: 'google_oauth' }).lean(),
       SystemSetting.findOne({ key: 'smtp' }).lean(),
       SystemSetting.findOne({ key: 'ai_config' }).lean(),
+      SystemSetting.findOne({ key: 'gtm' }).lean(),
     ]);
 
     // Google OAuth config with fallback
@@ -132,12 +147,23 @@ export const getSettings = async (req, res, next) => {
       updatedAt: aiSetting?.updatedAt || null,
     };
 
+    // Google Tag Manager (GTM)
+    const rawGtm = gtmSetting?.value || {};
+    const gtm = {
+      containerId: rawGtm.containerId || process.env.GTM_CONTAINER_ID || '',
+      enabled: Boolean(rawGtm.enabled),
+      enablePublicWebsite: rawGtm.enablePublicWebsite !== undefined ? Boolean(rawGtm.enablePublicWebsite) : true,
+      enableAdminPanel: Boolean(rawGtm.enableAdminPanel),
+      updatedAt: gtmSetting?.updatedAt || null,
+    };
+
     res.json({
       success: true,
       data: {
         google_oauth: oauth,
         smtp,
         ai_config: aiConfig,
+        gtm,
       },
     });
   } catch (error) {
@@ -152,8 +178,8 @@ export const getSettings = async (req, res, next) => {
 export const updateSetting = async (req, res, next) => {
   try {
     const { key } = req.params;
-    if (!['google_oauth', 'smtp', 'ai_config'].includes(key)) {
-      return res.status(400).json({ success: false, message: 'Invalid settings key. Must be google_oauth, smtp, or ai_config' });
+    if (!['google_oauth', 'smtp', 'ai_config', 'gtm'].includes(key)) {
+      return res.status(400).json({ success: false, message: 'Invalid settings key. Must be google_oauth, smtp, ai_config, or gtm' });
     }
 
     const existing = await SystemSetting.findOne({ key });
@@ -197,6 +223,16 @@ export const updateSetting = async (req, res, next) => {
         validatedValue.openai.apiKey = existing?.value?.openai?.apiKey || process.env.OPENAI_API_KEY || '';
       }
       group = 'ai';
+    } else if (key === 'gtm') {
+      const { error, value } = gtmSchema.validate(req.body);
+      if (error) {
+        return res.status(400).json({ success: false, message: error.details[0].message });
+      }
+      validatedValue = {
+        ...value,
+        containerId: (value.containerId || '').toUpperCase().trim(),
+      };
+      group = 'analytics';
     }
 
     const updated = await SystemSetting.findOneAndUpdate(
@@ -210,6 +246,8 @@ export const updateSetting = async (req, res, next) => {
             ? 'Google OAuth Client credentials'
             : key === 'smtp'
             ? 'SMTP Server settings for emails and OTPs'
+            : key === 'gtm'
+            ? 'Google Tag Manager (GTM) container configuration'
             : 'AI Provider configuration (Google Gemini & OpenAI)',
         updatedBy: req.user._id,
       },
@@ -237,7 +275,13 @@ export const updateSetting = async (req, res, next) => {
     res.json({
       success: true,
       message: `${
-        key === 'google_oauth' ? 'Google OAuth' : key === 'smtp' ? 'SMTP' : 'AI Provider'
+        key === 'google_oauth'
+          ? 'Google OAuth'
+          : key === 'smtp'
+          ? 'SMTP'
+          : key === 'gtm'
+          ? 'Google Tag Manager'
+          : 'AI Provider'
       } settings saved successfully`,
       data: sanitized,
     });

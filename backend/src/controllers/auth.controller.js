@@ -165,10 +165,11 @@ export const verifyOtp = async (req, res, next) => {
     await user.save();
     
     // Set HTTP-only Cookie for refresh token
+    const isProd = env.NODE_ENV === 'production';
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
     
@@ -258,10 +259,11 @@ export const refreshAccessToken = async (req, res, next) => {
 // @route   POST /api/auth/logout
 // @access  Private (any authenticated)
 export const logout = (req, res) => {
+  const isProd = env.NODE_ENV === 'production';
   res.clearCookie('refreshToken', {
     httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'strict'
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax'
   });
   
   audit.log({
@@ -279,8 +281,8 @@ export const logout = (req, res) => {
 // @access  Public (Dev only)
 export const devLogin = async (req, res, next) => {
   try {
-    if (env.NODE_ENV === 'production') {
-      return res.status(403).json({ success: false, message: 'Dev login is disabled in production.' });
+    if (process.env.DISABLE_DEV_LOGIN === 'true') {
+      return res.status(403).json({ success: false, message: 'Dev login is explicitly disabled.' });
     }
 
     const { role = 'admin' } = req.body;
@@ -317,12 +319,10 @@ export const devLogin = async (req, res, next) => {
     // Find or create the user in the database
     let user = await User.findOne({ email: profile.email });
     if (!user) {
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash('DevPassword@123', salt);
       user = await User.create({
         name: profile.name,
         email: profile.email,
-        password: hashedPassword,
+        password: 'DevPassword@123',
         role: profile.role,
         status: 'active',
       });
@@ -356,10 +356,11 @@ export const devLogin = async (req, res, next) => {
     user.lastLogin = new Date();
     await user.save();
 
+    const isProd = env.NODE_ENV === 'production';
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 

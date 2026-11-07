@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import api from '../services/api.js';
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState('ai'); // 'ai' | 'smtp' | 'oauth'
+  const [activeTab, setActiveTab] = useState('ai'); // 'ai' | 'smtp' | 'oauth' | 'gtm'
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testingSmtp, setTestingSmtp] = useState(false);
@@ -49,6 +49,13 @@ export default function SettingsPage() {
     },
   });
 
+  const [gtmForm, setGtmForm] = useState({
+    containerId: '',
+    enabled: false,
+    enablePublicWebsite: true,
+    enableAdminPanel: false,
+  });
+
   const [testEmailRecipient, setTestEmailRecipient] = useState('');
   const [showSmtpPass, setShowSmtpPass] = useState(false);
   const [showOauthSecret, setShowOauthSecret] = useState(false);
@@ -76,6 +83,12 @@ export default function SettingsPage() {
         setAiForm((prev) => ({
           ...prev,
           ...data.data.ai_config,
+        }));
+      }
+      if (data.data?.gtm) {
+        setGtmForm((prev) => ({
+          ...prev,
+          ...data.data.gtm,
         }));
       }
     } catch (err) {
@@ -136,6 +149,30 @@ export default function SettingsPage() {
       fetchSettings();
     } catch (err) {
       showToast('error', err.response?.data?.message || 'Failed to save AI settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveGtm = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const cleanContainerId = (gtmForm.containerId || '').trim().toUpperCase();
+      if (cleanContainerId && !/^GTM-[A-Z0-9_-]+$/i.test(cleanContainerId)) {
+        showToast('error', 'Container ID must start with GTM- followed by letters and numbers (e.g. GTM-N9K7P2Q)');
+        setSaving(false);
+        return;
+      }
+      const payload = {
+        ...gtmForm,
+        containerId: cleanContainerId,
+      };
+      await api.put('/admin/settings/gtm', payload);
+      showToast('success', 'Google Tag Manager settings saved successfully!');
+      fetchSettings();
+    } catch (err) {
+      showToast('error', err.response?.data?.message || 'Failed to save Google Tag Manager settings');
     } finally {
       setSaving(false);
     }
@@ -222,7 +259,7 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">System & AI Settings</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            Configure Google Gemini, OpenAI, Google OAuth, and SMTP delivery
+            Configure Google Gemini, OpenAI, Google OAuth, GTM, and SMTP delivery
           </p>
         </div>
 
@@ -267,6 +304,19 @@ export default function SettingsPage() {
               <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
             </svg>
             Google OAuth
+          </button>
+          <button
+            onClick={() => setActiveTab('gtm')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+              activeTab === 'gtm'
+                ? 'bg-white text-indigo-700 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <svg className="w-4 h-4 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+            </svg>
+            Tag Manager (GTM)
           </button>
         </div>
       </div>
@@ -803,7 +853,7 @@ export default function SettingsPage() {
             )}
           </div>
         </div>
-      ) : (
+      ) : activeTab === 'oauth' ? (
         /* ─── GOOGLE OAUTH TAB ────────────────────────────────────────────────────── */
         <div className="space-y-6">
           <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-xs">
@@ -919,6 +969,156 @@ export default function SettingsPage() {
                   className="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition shadow-xs disabled:opacity-50"
                 >
                   {saving ? 'Saving...' : 'Save Google OAuth Settings'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : (
+        /* ─── GOOGLE TAG MANAGER TAB ─────────────────────────────────────────────── */
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-xs">
+            <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-black">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">Google Tag Manager (GTM)</h2>
+                  <p className="text-xs text-slate-500">
+                    Deploy GA4, marketing pixels, and analytics events centrally without touching source code
+                  </p>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                <span>Enable GTM</span>
+                <input
+                  type="checkbox"
+                  checked={gtmForm.enabled}
+                  onChange={(e) => setGtmForm({ ...gtmForm, enabled: e.target.checked })}
+                  className="rounded text-indigo-600 w-4 h-4"
+                />
+              </label>
+            </div>
+
+            <form onSubmit={handleSaveGtm} className="space-y-5">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    GTM Container ID
+                  </label>
+                  <a
+                    href="https://tagmanager.google.com/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1"
+                  >
+                    Open Google Tag Manager
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={gtmForm.containerId}
+                    onChange={(e) => setGtmForm({ ...gtmForm, containerId: e.target.value.toUpperCase().trim() })}
+                    placeholder="GTM-XXXXXXX (e.g. GTM-N9K7P2Q)"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600"
+                  />
+                  {gtmForm.containerId && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      {/^GTM-[A-Z0-9_-]+$/i.test(gtmForm.containerId) ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                          ✓ Valid Container Format
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                          ⚠️ Must start with GTM-
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  Find this Container ID at the top right header of your container in the Google Tag Manager console.
+                </p>
+              </div>
+
+              {/* Deployment Scope */}
+              <div className="pt-2">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2.5">
+                  Target Injections
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">Public Reader Website</p>
+                      <p className="text-[11px] text-slate-500">Inject GTM tracking for readers on Next.js frontend</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={gtmForm.enablePublicWebsite}
+                      onChange={(e) => setGtmForm({ ...gtmForm, enablePublicWebsite: e.target.checked })}
+                      className="rounded text-indigo-600 w-4 h-4"
+                    />
+                  </div>
+
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">Admin CMS Workspace</p>
+                      <p className="text-[11px] text-slate-500">Inject GTM inside the internal newsroom dashboard</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={gtmForm.enableAdminPanel}
+                      onChange={(e) => setGtmForm({ ...gtmForm, enableAdminPanel: e.target.checked })}
+                      className="rounded text-indigo-600 w-4 h-4"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Injection Snippet Preview */}
+              <div className="p-4 rounded-2xl bg-slate-900 text-slate-200 text-xs font-mono border border-slate-800">
+                <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-800">
+                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
+                    Automatic Runtime Injections
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    gtmForm.enabled && gtmForm.containerId
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'bg-slate-700 text-slate-400'
+                  }`}>
+                    {gtmForm.enabled && gtmForm.containerId ? '● Active' : '○ Disabled'}
+                  </span>
+                </div>
+                <div className="space-y-2 text-[11px] text-slate-300">
+                  <div>
+                    <span className="text-indigo-400">&lt;head&gt;</span>
+                    <pre className="text-slate-400 mt-0.5 whitespace-pre-wrap break-all">
+                      {`https://www.googletagmanager.com/gtm.js?id=${gtmForm.containerId || 'GTM-XXXXXXX'}`}
+                    </pre>
+                  </div>
+                  <div>
+                    <span className="text-indigo-400">&lt;body&gt; (noscript fallback)</span>
+                    <pre className="text-slate-400 mt-0.5 whitespace-pre-wrap break-all">
+                      {`<iframe src="https://www.googletagmanager.com/ns.html?id=${gtmForm.containerId || 'GTM-XXXXXXX'}" height="0" width="0" style="display:none;visibility:hidden" />`}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition shadow-xs disabled:opacity-50"
+                >
+                  {saving ? 'Saving...' : 'Save Google Tag Manager Settings'}
                 </button>
               </div>
             </form>

@@ -61,6 +61,7 @@ export async function generateStaticParams() {
 import ThemeProvider from '@/components/ThemeProvider';
 import ClientLayout from '@/components/ClientLayout';
 import { AuthProvider } from '@/context/AuthContext';
+import GoogleTagManager from '@/components/GoogleTagManager';
 
 export default async function RootLayout({ children, params }) {
   const { lang } = await params;
@@ -74,6 +75,7 @@ export default async function RootLayout({ children, params }) {
       className={`${inter.variable} ${merriweather.variable} ${notoDevanagari.variable} ${notoGujarati.variable}`}
     >
       <body className="antialiased" data-lang={lang} suppressHydrationWarning>
+        <GoogleTagManager />
         <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:p-4 focus:bg-white focus:text-black">Skip to main content</a>
         <ThemeProvider>
           <AuthProvider>

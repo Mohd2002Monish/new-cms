@@ -27,6 +27,7 @@ import {
   getReaderProfile,
   subscribeUser,
   unsubscribeUser,
+  getGtmConfig,
 } from '../controllers/public.controller.js';
 
 import {
@@ -124,6 +125,9 @@ router.get('/auth/google/config', getGoogleAuthConfig);
 router.post('/auth/google', googleAuth);
 router.get('/auth/google/redirect', googleRedirect);
 router.get('/auth/google/callback', googleCallback);
+
+// ─── Google Tag Manager Route ──────────────────────────────────────────────────
+router.get('/gtm/config', getGtmConfig);
 
 // ─── Reader Preferences ──────────────────────────────────────────────────────────
 router.post('/track-interaction', optionalAuthenticate, trackInteraction);
