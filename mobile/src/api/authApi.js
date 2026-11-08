@@ -21,6 +21,16 @@ export const authApi = {
     return res.data;
   },
 
+  async getGoogleConfig() {
+    const res = await client.get('/public/auth/google/config');
+    return res.data?.data || null;
+  },
+
+  async googleAuth({ credential, code }) {
+    const res = await client.post('/public/auth/google', { credential, code });
+    return res.data;
+  },
+
   async getProfile() {
     const res = await client.get('/public/user/me');
     return res.data?.data || null;

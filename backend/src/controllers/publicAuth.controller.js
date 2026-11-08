@@ -586,6 +586,9 @@ export const googleAuth = async (req, res, next) => {
 };
 
 const resolvePortalUrl = (req) => {
+  if (req.query?.portalUrl) {
+    return req.query.portalUrl;
+  }
   const referer = req.get('referer') || req.get('origin');
   if (referer) {
     try {

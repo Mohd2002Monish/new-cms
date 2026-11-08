@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { Linking } from 'react-native';
 import storage from '../utils/storage';
 import authApi from '../api/authApi';
 import { setAuthToken } from '../api/client';
@@ -83,12 +84,56 @@ export function AuthProvider({ children }) {
     return { success: false, message: res?.message || 'Registration failed' };
   };
 
+  const loginWithGoogleToken = async (authToken, googleName = null) => {
+    if (!authToken) return { success: false, message: 'No authentication token provided' };
+    try {
+      setAuthToken(authToken);
+      setToken(authToken);
+      await storage.setItem('reader_token', authToken);
+      const profile = await authApi.getProfile().catch(() => null);
+      const userData = profile || { name: googleName || 'Google Reader' };
+      setUser(userData);
+      if (Array.isArray(profile?.bookmarks)) {
+        setBookmarks(profile.bookmarks);
+        await storage.setItem('reader_bookmarks', JSON.stringify(profile.bookmarks));
+      }
+      return { success: true, user: userData };
+    } catch (err) {
+      console.warn('loginWithGoogleToken failed:', err?.message);
+      return { success: false, message: err?.message || 'Failed to authenticate Google account' };
+    }
+  };
+
   const logout = async () => {
     setAuthToken(null);
     setUser(null);
     setToken(null);
     await storage.removeItem('reader_token');
   };
+
+  // Listen for OAuth return deep-links (e.g. dailychronicle://oauth?google_token=...)
+  useEffect(() => {
+    const handleDeepLink = async (event) => {
+      const url = event?.url;
+      if (!url || !url.startsWith('dailychronicle://oauth')) return;
+      try {
+        const queryString = url.split('?')[1] || '';
+        const params = new URLSearchParams(queryString);
+        const googleToken = params.get('google_token');
+        const googleName = params.get('google_name');
+        if (googleToken) {
+          await loginWithGoogleToken(googleToken, googleName);
+        }
+      } catch (_) {}
+    };
+
+    const sub = Linking.addEventListener('url', handleDeepLink);
+    Linking.getInitialURL().then((initUrl) => {
+      if (initUrl) handleDeepLink({ url: initUrl });
+    });
+
+    return () => sub.remove();
+  }, [loginWithGoogleToken]);
 
   const toggleBookmark = useCallback(async (slug) => {
     if (!slug) return;
@@ -122,6 +167,7 @@ export function AuthProvider({ children }) {
         loginOtp,
         sendOtp,
         register,
+        loginWithGoogleToken,
         logout,
         toggleBookmark,
         isBookmarked,
