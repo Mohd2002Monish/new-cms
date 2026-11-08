@@ -934,6 +934,23 @@ a {
 }
 .article-body a:hover { color: var(--color-brand-dark); }
 
+.article-body span[data-font-size="huge"] {
+  font-size: 1.75em !important;
+  font-weight: 800 !important;
+  line-height: 1.25 !important;
+  display: inline;
+}
+.article-body span[data-font-size="large"] {
+  font-size: 1.35em !important;
+  font-weight: 700 !important;
+  line-height: 1.3 !important;
+  display: inline;
+}
+.article-body span[data-font-size="small"] {
+  font-size: 0.85em !important;
+  display: inline;
+}
+
 .article-body strong, .article-body b { font-weight: 700; }
 .article-body em, .article-body i     { font-style: italic; }
 

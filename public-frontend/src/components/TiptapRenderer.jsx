@@ -6,6 +6,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { Link as TiptapLink } from '@tiptap/extension-link';
 import { Image as TiptapImage } from '@tiptap/extension-image';
 import { PollExtension } from '../extensions/PollExtension';
+import { FontSizeMark } from '../extensions/FontSizeMark';
 
 /**
  * TiptapRenderer — renders a Tiptap JSON document in read-only mode.
@@ -24,6 +25,7 @@ export default function TiptapRenderer({ content, className = '' }) {
       }),
       TiptapImage.configure({ inline: false }),
       PollExtension,
+      FontSizeMark,
     ],
     content: content || null,
     editable: false,
