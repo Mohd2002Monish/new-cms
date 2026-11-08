@@ -13,11 +13,13 @@ import {
   Check,
   Terminal,
   Trash2,
+  Download,
 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useAudioPlaylist } from '../context/AudioPlaylistContext';
 import { getBaseUrl, setCustomApiUrl } from '../api/client';
+import offlineManager from '../utils/offlineManager';
 import logger from '../utils/logger';
 
 export default function ProfileScreen({ navigation }) {
@@ -30,6 +32,11 @@ export default function ProfileScreen({ navigation }) {
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [logsModalVisible, setLogsModalVisible] = useState(false);
   const [appLogs, setAppLogs] = useState([]);
+  const [offlineCount, setOfflineCount] = useState(0);
+
+  useEffect(() => {
+    offlineManager.getOfflineArticles().then((items) => setOfflineCount(items.length));
+  }, []);
 
   const handleOpenLogs = async () => {
     const logs = await logger.getLogs();
@@ -94,18 +101,55 @@ export default function ProfileScreen({ navigation }) {
       <View style={[styles.statsRow, { borderColor: colors.border }]}>
         <View style={styles.statBox}>
           <Text style={[styles.statNumber, { color: colors.text }]}>{(bookmarks && bookmarks.length) || 0}</Text>
-          <Text style={[styles.statLabel, { color: colors.textMuted }]}>Saved Stories</Text>
+          <Text style={[styles.statLabel, { color: colors.textMuted }]}>Saved</Text>
+        </View>
+        <View style={[styles.statDivider, { backgroundColor: colors.borderLight }]} />
+        <View style={styles.statBox}>
+          <Text style={[styles.statNumber, { color: colors.primary }]}>🔥 4d</Text>
+          <Text style={[styles.statLabel, { color: colors.textMuted }]}>Streak</Text>
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.borderLight }]} />
         <View style={styles.statBox}>
           <Text style={[styles.statNumber, { color: colors.text }]}>25</Text>
-          <Text style={[styles.statLabel, { color: colors.textMuted }]}>Daily Digest Queue</Text>
+          <Text style={[styles.statLabel, { color: colors.textMuted }]}>Digest Queue</Text>
         </View>
       </View>
 
       {/* Preferences Section */}
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>PREFERENCES</Text>
+
+        {/* Offline Downloads */}
+        <TouchableOpacity
+          style={[styles.settingRow, { borderBottomColor: colors.borderLight }]}
+          onPress={() => {
+            Alert.alert(
+              'Offline Storage',
+              `You currently have ${offlineCount} stories downloaded for offline reading.\n\nWould you like to clear offline data to free up space?`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Clear All',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await offlineManager.clearAllOfflineData();
+                    setOfflineCount(0);
+                    Alert.alert('Cleared', 'All offline stories and cached files have been removed.');
+                  },
+                },
+              ]
+            );
+          }}
+        >
+          <View style={styles.settingLeft}>
+            <Download size={18} color={colors.text} />
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Offline Downloads</Text>
+          </View>
+          <View style={styles.settingRight}>
+            <Text style={[styles.settingValue, { color: colors.primary }]}>{offlineCount} stories</Text>
+            <ChevronRight size={16} color={colors.textMuted} />
+          </View>
+        </TouchableOpacity>
 
         {/* Dark Mode Toggle */}
         <View style={[styles.settingRow, { borderBottomColor: colors.borderLight }]}>

@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { Bookmark } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -45,7 +46,13 @@ function ArticleCard({ article, onPress, isHero = false }) {
         activeOpacity={0.88}
       >
         {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={styles.heroImage} resizeMode="cover" />
+          <ExpoImage
+            source={{ uri: imageUrl }}
+            style={styles.heroImage}
+            contentFit="cover"
+            transition={200}
+            cachePolicy="disk"
+          />
         ) : (
           <View style={[styles.heroImagePlaceholder, { backgroundColor: colors.surfaceHighlight }]} />
         )}
@@ -62,7 +69,7 @@ function ArticleCard({ article, onPress, isHero = false }) {
             style={[styles.heroTitle, { color: colors.text, fontFamily: typography.fontSerif }]}
             numberOfLines={3}
           >
-            {article.title}
+            {article.title || 'Untitled Dispatch'}
           </Text>
 
           {article.excerpt ? (
@@ -100,7 +107,7 @@ function ArticleCard({ article, onPress, isHero = false }) {
           style={[styles.cardTitle, { color: colors.text, fontFamily: typography.fontSerif }]}
           numberOfLines={2}
         >
-          {article.title}
+          {article.title || 'Untitled Dispatch'}
         </Text>
 
         <View style={styles.cardFooter}>
@@ -112,7 +119,13 @@ function ArticleCard({ article, onPress, isHero = false }) {
       </View>
 
       {imageUrl ? (
-        <Image source={{ uri: imageUrl }} style={styles.thumbnail} resizeMode="cover" />
+        <ExpoImage
+          source={{ uri: imageUrl }}
+          style={styles.thumbnail}
+          contentFit="cover"
+          transition={150}
+          cachePolicy="disk"
+        />
       ) : (
         <View style={[styles.thumbnailPlaceholder, { backgroundColor: colors.surfaceHighlight }]} />
       )}

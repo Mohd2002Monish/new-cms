@@ -5,9 +5,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Image,
   ActivityIndicator,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import {
   ChevronDown,
   Play,
@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Volume2,
   Globe,
+  Moon,
 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAudioPlaylist } from '../context/AudioPlaylistContext';
@@ -42,12 +43,15 @@ export default function AudioDigestModalScreen({ navigation }) {
     audioLanguage,
     positionMillis,
     durationMillis,
+    sleepTimerMinutes,
+    sleepTimerRemainingSec,
     playPause,
     playNext,
     playPrevious,
     jumpToStory,
     changePlaybackSpeed,
     changeLanguage,
+    setSleepTimer,
     seekTo,
     setIsFullPlayerVisible,
   } = useAudioPlaylist();
@@ -87,7 +91,13 @@ export default function AudioDigestModalScreen({ navigation }) {
         {/* Story Hero Image */}
         <View style={styles.imageContainer}>
           {storyImageUrl ? (
-            <Image source={{ uri: storyImageUrl }} style={styles.storyImage} resizeMode="cover" />
+            <ExpoImage
+              source={{ uri: storyImageUrl }}
+              style={styles.storyImage}
+              contentFit="cover"
+              transition={200}
+              cachePolicy="disk"
+            />
           ) : (
             <View style={[styles.imagePlaceholder, { backgroundColor: colors.surfaceHighlight }]}>
               <Volume2 size={44} color={colors.primary} />
@@ -171,6 +181,33 @@ export default function AudioDigestModalScreen({ navigation }) {
             }}
           >
             <Text style={[styles.speedText, { color: colors.text }]}>{playbackSpeed}x</Text>
+          </TouchableOpacity>
+
+          {/* Audio Sleep Timer Pill */}
+          <TouchableOpacity
+            style={[
+              styles.speedPill,
+              {
+                borderColor: sleepTimerMinutes ? colors.primary : colors.border,
+                backgroundColor: sleepTimerMinutes ? colors.primaryMuted : 'transparent',
+              },
+            ]}
+            onPress={() => {
+              const TIMER_CYCLE = [null, 15, 30, 45, 60];
+              const curIdx = TIMER_CYCLE.indexOf(sleepTimerMinutes);
+              const nextTimer = TIMER_CYCLE[(curIdx + 1) % TIMER_CYCLE.length];
+              setSleepTimer(nextTimer);
+            }}
+          >
+            <Moon size={13} color={sleepTimerMinutes ? colors.primary : colors.textMuted} style={{ marginRight: 3 }} />
+            <Text
+              style={[
+                styles.speedText,
+                { color: sleepTimerMinutes ? colors.primary : colors.textMuted, fontSize: 11 },
+              ]}
+            >
+              {sleepTimerMinutes ? `${Math.ceil((sleepTimerRemainingSec || 60) / 60)}m` : 'Timer'}
+            </Text>
           </TouchableOpacity>
         </View>
 

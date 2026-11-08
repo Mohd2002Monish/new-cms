@@ -27,6 +27,10 @@ export function AudioPlaylistProvider({ children }) {
   const [isMiniPlayerVisible, setIsMiniPlayerVisible] = useState(false);
   const [isFullPlayerVisible, setIsFullPlayerVisible] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [sleepTimerMinutes, setSleepTimerMinutes] = useState(null);
+  const [sleepTimerRemainingSec, setSleepTimerRemainingSec] = useState(null);
+
+  const sleepTimerIntervalRef = useRef(null);
 
   // Native sound instance or Web audio instance
   const soundRef = useRef(null);
@@ -35,6 +39,7 @@ export function AudioPlaylistProvider({ children }) {
   const playlistRef = useRef([]);
   const speedRef = useRef(1.0);
   const languageRef = useRef('en');
+  const loadRequestIdRef = useRef(0);
 
   // Keep refs in sync for callbacks
   useEffect(() => {
@@ -103,6 +108,7 @@ export function AudioPlaylistProvider({ children }) {
       return;
     }
 
+    const currentReqId = ++loadRequestIdRef.current;
     const story = list[index];
     const storyLang = (story.language || languageRef.current || 'en').toLowerCase().slice(0, 2);
     setAudioLanguage(storyLang);
@@ -111,6 +117,7 @@ export function AudioPlaylistProvider({ children }) {
     setCurrentIndex(index);
     setIsLoadingAudio(true);
     await stopCurrentAudio();
+    if (loadRequestIdRef.current !== currentReqId) return;
 
     try {
       // 1. Check if actual human audio narration was uploaded for this news language
@@ -134,6 +141,8 @@ export function AudioPlaylistProvider({ children }) {
         audioUri = ttsData?.audioContent;
       }
 
+      if (loadRequestIdRef.current !== currentReqId) return;
+
       if (!audioUri) {
         throw new Error('No audio content available for this story');
       }
@@ -146,17 +155,21 @@ export function AudioPlaylistProvider({ children }) {
         webAudioRef.current = audio;
 
         audio.ontimeupdate = () => {
+          if (loadRequestIdRef.current !== currentReqId) return;
           setPositionMillis(Math.floor(audio.currentTime * 1000));
           setDurationMillis(Math.floor((audio.duration || 0) * 1000));
         };
 
         audio.onended = () => {
+          if (loadRequestIdRef.current !== currentReqId) return;
           // Continuous Auto-Advance: Play next story in playlist
           playNext();
         };
 
         await audio.play();
-        setIsPlaying(true);
+        if (loadRequestIdRef.current === currentReqId) {
+          setIsPlaying(true);
+        }
       } else {
         // React Native Expo-AV with base64 file caching for Android stability
         let playableUri = audioUri;
@@ -174,11 +187,16 @@ export function AudioPlaylistProvider({ children }) {
           }
         }
 
+        if (loadRequestIdRef.current !== currentReqId) return;
+
         await ensureAudioMode();
+        if (loadRequestIdRef.current !== currentReqId) return;
+
         const { sound } = await ExpoAudio.Sound.createAsync(
           { uri: playableUri },
           { shouldPlay: true, rate: speedRef.current, shouldCorrectPitch: true },
           (status) => {
+            if (loadRequestIdRef.current !== currentReqId) return;
             if (!status.isLoaded) {
               if (status.error) console.warn('ExpoAudio playback error:', status.error);
               return;
@@ -194,16 +212,29 @@ export function AudioPlaylistProvider({ children }) {
             }
           }
         );
+
+        if (loadRequestIdRef.current !== currentReqId) {
+          try {
+            await sound.stopAsync();
+            await sound.unloadAsync();
+          } catch (_) {}
+          return;
+        }
+
         soundRef.current = sound;
         setIsPlaying(true);
       }
     } catch (err) {
-      console.error('Failed to load audio for story track:', err?.message);
-      setIsPlaying(false);
+      logger.warn('AudioPlaylist', 'Failed to load audio for story track: ' + (err?.message || 'unknown'));
+      if (loadRequestIdRef.current === currentReqId) {
+        setIsPlaying(false);
+      }
     } finally {
-      setIsLoadingAudio(false);
+      if (loadRequestIdRef.current === currentReqId) {
+        setIsLoadingAudio(false);
+      }
     }
-  }, [stopCurrentAudio]);
+  }, [stopCurrentAudio, ensureAudioMode, playNext]);
 
   // Action: Start the Daily Top 20-30 News Briefing
   const startDailyBriefing = useCallback(async ({ limit = 25, language = 'en', stories = null } = {}) => {
@@ -347,6 +378,46 @@ export function AudioPlaylistProvider({ children }) {
     setIsFullPlayerVisible(false);
   }, [stopCurrentAudio]);
 
+  // Action: Set audio sleep timer (15, 30, 45, 60 mins or null to cancel)
+  const setSleepTimer = useCallback((minutes) => {
+    if (sleepTimerIntervalRef.current) {
+      clearInterval(sleepTimerIntervalRef.current);
+      sleepTimerIntervalRef.current = null;
+    }
+
+    if (!minutes || minutes <= 0) {
+      setSleepTimerMinutes(null);
+      setSleepTimerRemainingSec(null);
+      return;
+    }
+
+    const totalSeconds = minutes * 60;
+    setSleepTimerMinutes(minutes);
+    setSleepTimerRemainingSec(totalSeconds);
+
+    let remaining = totalSeconds;
+    sleepTimerIntervalRef.current = setInterval(async () => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(sleepTimerIntervalRef.current);
+        sleepTimerIntervalRef.current = null;
+        setSleepTimerMinutes(null);
+        setSleepTimerRemainingSec(null);
+        await stopCurrentAudio();
+      } else {
+        setSleepTimerRemainingSec(remaining);
+      }
+    }, 1000);
+  }, [stopCurrentAudio]);
+
+  useEffect(() => {
+    return () => {
+      if (sleepTimerIntervalRef.current) {
+        clearInterval(sleepTimerIntervalRef.current);
+      }
+    };
+  }, []);
+
   const currentStory = playlist[currentIndex] || null;
 
   return (
@@ -362,6 +433,8 @@ export function AudioPlaylistProvider({ children }) {
         audioLanguage,
         positionMillis,
         durationMillis,
+        sleepTimerMinutes,
+        sleepTimerRemainingSec,
         isMiniPlayerVisible,
         isFullPlayerVisible,
         setIsMiniPlayerVisible,
@@ -374,6 +447,7 @@ export function AudioPlaylistProvider({ children }) {
         seekTo,
         changePlaybackSpeed,
         changeLanguage,
+        setSleepTimer,
         dismissMiniPlayer,
       }}
     >

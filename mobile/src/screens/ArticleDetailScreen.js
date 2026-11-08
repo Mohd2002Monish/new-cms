@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   Share,
+  Alert,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import {
   ArrowLeft,
   Bookmark,
@@ -17,13 +18,19 @@ import {
   Volume2,
   ZoomIn,
   ZoomOut,
+  RefreshCw,
+  Download,
+  CheckCircle,
+  ArrowRight,
 } from 'lucide-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useAudioPlaylist } from '../context/AudioPlaylistContext';
 import newsApi from '../api/newsApi';
+import offlineManager from '../utils/offlineManager';
 import { formatTimeAgo, getEstimatedReadTime, stripHtml, getImageUrl } from '../utils/formatters';
 import ArticleCard from '../components/ArticleCard';
+import RichArticleRenderer from '../components/RichArticleRenderer';
 
 export default function ArticleDetailScreen({ route, navigation }) {
   const { slug } = route.params || {};
@@ -34,31 +41,58 @@ export default function ArticleDetailScreen({ route, navigation }) {
   const [article, setArticle] = useState(null);
   const [related, setRelated] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [fontSize, setFontSize] = useState(16);
+  const [isDownloaded, setIsDownloaded] = useState(false);
 
   useEffect(() => {
-    async function fetchArticle() {
-      if (!slug) return;
-      setLoading(true);
-      try {
-        const data = await newsApi.getArticleBySlug(slug);
-        setArticle(data);
-        if (data?.category?.slug) {
-          const relatedRes = await newsApi.getArticles({
-            category: data.category.slug,
-            limit: 4,
-          });
-          const filtered = (relatedRes?.data || []).filter((a) => a.slug !== slug);
-          setRelated(filtered.slice(0, 3));
-        }
-      } catch (err) {
-        console.warn('Failed to load article detail:', err?.message);
-      } finally {
-        setLoading(false);
+    if (article?.slug) {
+      offlineManager.isArticleDownloaded(article.slug).then(setIsDownloaded);
+    }
+  }, [article?.slug]);
+
+  const handleToggleOffline = async () => {
+    if (!article) return;
+    if (isDownloaded) {
+      await offlineManager.removeOfflineArticle(article.slug);
+      setIsDownloaded(false);
+      Alert.alert('Offline Mode', 'Story removed from offline storage.');
+    } else {
+      const ok = await offlineManager.saveArticleOffline(article);
+      if (ok) {
+        setIsDownloaded(true);
+        Alert.alert('Offline Mode', 'Story saved for offline reading. You can read it without internet anytime.');
       }
     }
-    fetchArticle();
+  };
+
+  const fetchArticle = useCallback(async () => {
+    if (!slug) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await newsApi.getArticleBySlug(slug);
+      if (!data) throw new Error('Article not found');
+      setArticle(data);
+      if (data?.category?.slug) {
+        const relatedRes = await newsApi.getArticles({
+          category: data.category.slug,
+          limit: 4,
+        }).catch(() => null);
+        const filtered = (relatedRes?.data || []).filter((a) => a.slug !== slug);
+        setRelated(filtered.slice(0, 3));
+      }
+    } catch (err) {
+      console.warn('Failed to load article detail:', err?.message);
+      setError(err?.message || 'Unable to connect to news service.');
+    } finally {
+      setLoading(false);
+    }
   }, [slug]);
+
+  useEffect(() => {
+    fetchArticle();
+  }, [fetchArticle]);
 
   if (loading) {
     return (
@@ -68,10 +102,27 @@ export default function ArticleDetailScreen({ route, navigation }) {
     );
   }
 
-  if (!article) {
+  if (error || (!loading && !article)) {
     return (
-      <View style={[styles.loadingCenter, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.textSecondary }}>Story could not be loaded.</Text>
+      <View style={[styles.loadingCenter, { backgroundColor: colors.background, paddingHorizontal: 24 }]}>
+        <Text style={[styles.errorTitle, { color: colors.text }]}>Unable to Load Story</Text>
+        <Text style={[styles.errorSub, { color: colors.textSecondary }]}>
+          {error || 'This article could not be retrieved. Please check your connection and try again.'}
+        </Text>
+        <TouchableOpacity
+          style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+          onPress={fetchArticle}
+          activeOpacity={0.8}
+        >
+          <RefreshCw size={16} color="#ffffff" style={{ marginRight: 6 }} />
+          <Text style={styles.retryBtnText}>Retry</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.backTextBtn}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={{ color: colors.textMuted, fontSize: 14 }}>Go Back</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -81,10 +132,23 @@ export default function ArticleDetailScreen({ route, navigation }) {
   const cleanBody = stripHtml(article.contentHtml || article.content);
   const imageUrl = getImageUrl(article.featuredImage);
 
+  // Split cleanBody into safe individual paragraphs to prevent Android Hermes buffer overflows
+  const paragraphs = useMemo(() => {
+    if (!cleanBody) return [];
+    return cleanBody
+      .split(/\n\s*\n/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+  }, [cleanBody]);
+
+  const storyLang = (article.language || 'en').toLowerCase().slice(0, 2);
+  const humanAudioAvailable = Boolean(article.audioNarrations?.[storyLang]?.url);
+  const audioLanguageLabel = storyLang === 'hi' ? 'Hindi' : storyLang === 'gu' ? 'Gujarati' : 'English';
+
   const handleShare = () => {
     Share.share({
-      title: article.title,
-      message: `${article.title}\n\nRead more on The Daily Chronicle.`,
+      title: article.title || 'The Daily Chronicle',
+      message: `${article.title || 'Breaking News'}\n\nRead more on The Daily Chronicle.`,
     });
   };
 
@@ -121,6 +185,14 @@ export default function ArticleDetailScreen({ route, navigation }) {
             <Bookmark size={20} color={bookmarked ? colors.primary : colors.text} fill={bookmarked ? colors.primary : 'transparent'} />
           </TouchableOpacity>
 
+          <TouchableOpacity style={styles.navBtn} onPress={handleToggleOffline}>
+            {isDownloaded ? (
+              <CheckCircle size={20} color={colors.statusSuccess || '#22c55e'} />
+            ) : (
+              <Download size={20} color={colors.text} />
+            )}
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.navBtn} onPress={handleShare}>
             <Share2 size={20} color={colors.text} />
           </TouchableOpacity>
@@ -142,7 +214,7 @@ export default function ArticleDetailScreen({ route, navigation }) {
 
         {/* Headline */}
         <Text style={[styles.title, { color: colors.text, fontFamily: typography.fontSerif }]}>
-          {article.title}
+          {article.title || 'Untitled Dispatch'}
         </Text>
 
         {/* Byline */}
@@ -160,9 +232,13 @@ export default function ArticleDetailScreen({ route, navigation }) {
             <Headphones size={18} color="#ffffff" />
           </View>
           <View style={styles.audioBtnTexts}>
-            <Text style={[styles.audioBtnTitle, { color: colors.text }]}>Listen to this Article</Text>
+            <Text style={[styles.audioBtnTitle, { color: colors.text }]}>
+              Listen in {audioLanguageLabel}
+            </Text>
             <Text style={[styles.audioBtnSub, { color: colors.textSecondary }]}>
-              Narration powered by TTS Audio Engine ({readTime}m listen)
+              {humanAudioAvailable
+                ? `🎙️ Official Human Voice (${readTime}m listen)`
+                : `AI Audio Engine (${readTime}m listen)`}
             </Text>
           </View>
           <Volume2 size={20} color={colors.primary} />
@@ -170,7 +246,13 @@ export default function ArticleDetailScreen({ route, navigation }) {
 
         {/* Featured Image */}
         {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={styles.featuredImage} resizeMode="cover" />
+          <ExpoImage
+            source={{ uri: imageUrl }}
+            style={styles.featuredImage}
+            contentFit="cover"
+            transition={200}
+            cachePolicy="disk"
+          />
         ) : null}
 
         {/* Excerpt Lead */}
@@ -180,10 +262,48 @@ export default function ArticleDetailScreen({ route, navigation }) {
           </Text>
         ) : null}
 
-        {/* Article Body */}
-        <Text style={[styles.bodyText, { color: colors.text, fontSize, lineHeight: fontSize * 1.55 }]}>
-          {cleanBody}
-        </Text>
+        {/* Article Body: Rich Editorial Typography with Headings, Quotes, Links */}
+        {article.contentHtml ? (
+          <RichArticleRenderer
+            contentHtml={article.contentHtml}
+            fontSize={fontSize}
+            colors={colors}
+            typography={typography}
+          />
+        ) : paragraphs.length > 0 ? (
+          paragraphs.map((para, pIdx) => (
+            <Text
+              key={`para_${pIdx}`}
+              style={[
+                styles.bodyText,
+                { color: colors.text, fontSize, lineHeight: Math.round(fontSize * 1.6) },
+              ]}
+            >
+              {para}
+            </Text>
+          ))
+        ) : (
+          <Text style={[styles.bodyText, { color: colors.text, fontSize, lineHeight: Math.round(fontSize * 1.6) }]}>
+            {cleanBody || 'No text content available for this dispatch.'}
+          </Text>
+        )}
+
+        {/* Next Story Card */}
+        {related.length > 0 && (
+          <TouchableOpacity
+            style={[styles.nextStoryCard, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}
+            onPress={() => navigation.push('ArticleDetail', { slug: related[0].slug })}
+            activeOpacity={0.85}
+          >
+            <View style={styles.nextStoryLeft}>
+              <Text style={[styles.nextStoryTag, { color: colors.primary }]}>UP NEXT IN THIS SECTION</Text>
+              <Text style={[styles.nextStoryTitle, { color: colors.text, fontFamily: typography.fontSerif }]} numberOfLines={2}>
+                {related[0].title}
+              </Text>
+            </View>
+            <ArrowRight size={22} color={colors.primary} />
+          </TouchableOpacity>
+        )}
 
         {/* Related Stories */}
         {related.length > 0 && (
@@ -310,7 +430,61 @@ const styles = StyleSheet.create({
   },
   bodyText: {
     letterSpacing: 0.2,
-    marginBottom: 30,
+    marginBottom: 16,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  errorSub: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginBottom: 14,
+  },
+  retryBtnText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  backTextBtn: {
+    padding: 8,
+  },
+  nextStoryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 20,
+    marginBottom: 10,
+    gap: 12,
+  },
+  nextStoryLeft: {
+    flex: 1,
+  },
+  nextStoryTag: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  nextStoryTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 22,
   },
   relatedSection: {
     marginTop: 20,

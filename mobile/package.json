@@ -20,6 +20,7 @@
     "expo-av": "~14.0.7",
     "expo-constants": "~16.0.2",
     "expo-file-system": "~17.0.1",
+    "expo-image": "~1.12.12",
     "expo-status-bar": "~1.12.1",
     "expo-system-ui": "~3.0.7",
     "lucide-react-native": "^0.395.0",

@@ -117,6 +117,16 @@ export default function HomeScreen({ navigation }) {
     setSelectedCategory(catSlug);
   };
 
+  const renderArticleItem = useCallback(
+    ({ item }) => (
+      <ArticleCard
+        article={item}
+        onPress={() => navigation.navigate('ArticleDetail', { slug: item.slug })}
+      />
+    ),
+    [navigation]
+  );
+
   const heroArticle = articles.length > 0 ? articles[0] : null;
   const feedArticles = articles.length > 1 ? articles.slice(1) : [];
 
@@ -136,11 +146,11 @@ export default function HomeScreen({ navigation }) {
         }
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
-        initialNumToRender={5}
-        maxToRenderPerBatch={5}
-        windowSize={5}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={3}
         removeClippedSubviews={Platform.OS === 'android'}
-        updateCellsBatchingPeriod={50}
+        updateCellsBatchingPeriod={40}
         ListHeaderComponent={
           <View>
             {/* Breaking News Marquee Strip if present */}
@@ -184,12 +194,7 @@ export default function HomeScreen({ navigation }) {
             )}
           </View>
         }
-        renderItem={({ item }) => (
-          <ArticleCard
-            article={item}
-            onPress={() => navigation.navigate('ArticleDetail', { slug: item.slug })}
-          />
-        )}
+        renderItem={renderArticleItem}
         ListEmptyComponent={
           initialLoading || loading ? (
             <View style={styles.stateContainer}>

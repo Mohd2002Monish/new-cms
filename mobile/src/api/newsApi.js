@@ -1,4 +1,6 @@
 import client from './client';
+import storage from '../utils/storage';
+import { safeJsonParse } from '../utils/formatters';
 
 // In-memory cache for instant UI rendering across navigation and category filters
 const memoryCache = new Map();
@@ -13,12 +15,38 @@ function getCache(key, ttlMs = 120000) {
   return entry.data;
 }
 
-function setCache(key, data) {
+async function getPersistentCache(key, ttlMs = 300000) {
+  const mem = getCache(key, ttlMs);
+  if (mem) return mem;
+
+  try {
+    const raw = await storage.getItem(`@cache_${key}`);
+    if (raw) {
+      const parsed = safeJsonParse(raw);
+      if (parsed && parsed.data) {
+        // Return cached data immediately if within TTL or as stale-fallback
+        if (!ttlMs || Date.now() - (parsed.time || 0) < ttlMs) {
+          memoryCache.set(key, { data: parsed.data, time: parsed.time || Date.now() });
+          return parsed.data;
+        }
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+function setCache(key, data, persistToDisk = true) {
+  if (!data) return;
   if (memoryCache.size > 80) {
     const oldestKey = memoryCache.keys().next().value;
     memoryCache.delete(oldestKey);
   }
-  memoryCache.set(key, { data, time: Date.now() });
+  const time = Date.now();
+  memoryCache.set(key, { data, time });
+
+  if (persistToDisk) {
+    storage.setItem(`@cache_${key}`, JSON.stringify({ data, time })).catch(() => {});
+  }
 }
 
 export const newsApi = {
@@ -32,7 +60,7 @@ export const newsApi = {
   async getDailyBriefingArticles(limit = 25, lang = 'en', forceRefresh = false) {
     const cacheKey = `briefing:${limit}:${lang}`;
     if (!forceRefresh) {
-      const cached = getCache(cacheKey, 3 * 60 * 1000);
+      const cached = await getPersistentCache(cacheKey, 15 * 60 * 1000);
       if (cached) return cached;
     }
 
@@ -45,7 +73,7 @@ export const newsApi = {
         },
       });
       const data = res.data?.data || [];
-      if (data.length > 0) setCache(cacheKey, data);
+      if (data.length > 0) setCache(cacheKey, data, true);
       return data;
     } catch (err) {
       console.warn('newsApi.getDailyBriefingArticles failed, trying trending fallback', err?.message);
@@ -54,10 +82,12 @@ export const newsApi = {
           params: { limit, lang },
         });
         const data = trendRes.data?.data || [];
-        if (data.length > 0) setCache(cacheKey, data);
+        if (data.length > 0) setCache(cacheKey, data, true);
         return data;
       } catch (e) {
-        return [];
+        // Return stale cache if available when offline
+        const stale = await getPersistentCache(cacheKey, 24 * 60 * 60 * 1000);
+        return stale || [];
       }
     }
   },
@@ -68,7 +98,7 @@ export const newsApi = {
   async getArticles({ page = 1, limit = 10, category = null, lang = 'en', sort = 'latest', forceRefresh = false } = {}) {
     const cacheKey = `articles:${page}:${limit}:${category || 'all'}:${lang}:${sort}`;
     if (!forceRefresh) {
-      const cached = getCache(cacheKey, 90 * 1000);
+      const cached = await getPersistentCache(cacheKey, 90 * 1000);
       if (cached) return cached;
     }
 
@@ -76,11 +106,19 @@ export const newsApi = {
     if (category && category !== 'all') {
       params.category = category;
     }
-    const res = await client.get('/public/articles', { params });
-    if (res.data) {
-      setCache(cacheKey, res.data);
+
+    try {
+      const res = await client.get('/public/articles', { params });
+      if (res.data) {
+        setCache(cacheKey, res.data, page === 1);
+      }
+      return res.data;
+    } catch (err) {
+      // Offline fallback: try reading stale cache from disk
+      const stale = await getPersistentCache(cacheKey, 24 * 60 * 60 * 1000);
+      if (stale) return stale;
+      throw err;
     }
-    return res.data;
   },
 
   /**
@@ -89,16 +127,22 @@ export const newsApi = {
   async getArticleBySlug(slug, forceRefresh = false) {
     const cacheKey = `article:${slug}`;
     if (!forceRefresh) {
-      const cached = getCache(cacheKey, 5 * 60 * 1000);
+      const cached = await getPersistentCache(cacheKey, 10 * 60 * 1000);
       if (cached) return cached;
     }
 
-    const res = await client.get(`/public/articles/${encodeURIComponent(slug)}`);
-    const data = res.data?.data || null;
-    if (data) {
-      setCache(cacheKey, data);
+    try {
+      const res = await client.get(`/public/articles/${encodeURIComponent(slug)}`);
+      const data = res.data?.data || null;
+      if (data) {
+        setCache(cacheKey, data, true);
+      }
+      return data;
+    } catch (err) {
+      const stale = await getPersistentCache(cacheKey, 48 * 60 * 60 * 1000);
+      if (stale) return stale;
+      throw err;
     }
-    return data;
   },
 
   /**
@@ -107,16 +151,21 @@ export const newsApi = {
   async getCategories(lang = 'en', forceRefresh = false) {
     const cacheKey = `categories:${lang}`;
     if (!forceRefresh) {
-      const cached = getCache(cacheKey, 10 * 60 * 1000);
+      const cached = await getPersistentCache(cacheKey, 30 * 60 * 1000);
       if (cached) return cached;
     }
 
-    const res = await client.get('/public/categories', { params: { lang } });
-    const data = res.data?.data || [];
-    if (data.length > 0) {
-      setCache(cacheKey, data);
+    try {
+      const res = await client.get('/public/categories', { params: { lang } });
+      const data = res.data?.data || [];
+      if (data.length > 0) {
+        setCache(cacheKey, data, true);
+      }
+      return data;
+    } catch (err) {
+      const stale = await getPersistentCache(cacheKey, 7 * 24 * 60 * 60 * 1000);
+      return stale || [];
     }
-    return data;
   },
 
   /**
@@ -131,7 +180,7 @@ export const newsApi = {
       params: { q: query, page, limit, lang },
     });
     if (res.data) {
-      setCache(cacheKey, res.data);
+      setCache(cacheKey, res.data, false);
     }
     return res.data;
   },
@@ -142,16 +191,21 @@ export const newsApi = {
   async getBreakingNews(lang = 'en', forceRefresh = false) {
     const cacheKey = `breaking:${lang}`;
     if (!forceRefresh) {
-      const cached = getCache(cacheKey, 2 * 60 * 1000);
+      const cached = await getPersistentCache(cacheKey, 3 * 60 * 1000);
       if (cached) return cached;
     }
 
-    const res = await client.get('/public/articles/breaking', { params: { lang } });
-    const data = res.data?.data || [];
-    if (data.length > 0) {
-      setCache(cacheKey, data);
+    try {
+      const res = await client.get('/public/articles/breaking', { params: { lang } });
+      const data = res.data?.data || [];
+      if (data.length > 0) {
+        setCache(cacheKey, data, true);
+      }
+      return data;
+    } catch (err) {
+      const stale = await getPersistentCache(cacheKey, 12 * 60 * 60 * 1000);
+      return stale || [];
     }
-    return data;
   },
 };
 
