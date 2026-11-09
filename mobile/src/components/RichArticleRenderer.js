@@ -187,19 +187,26 @@ export default function RichArticleRenderer({
   };
 
   const renderTokens = (tokens, baseScale = 1, inheritStyle = {}) => {
+    if (!Array.isArray(tokens)) return null;
+
     return tokens.map((token, idx) => {
-      const tokenFontSize = fontSize * baseScale * (token.sizeMultiplier || 1);
+      const isScaleDifferent = (token.sizeMultiplier && token.sizeMultiplier !== 1) || baseScale !== 1;
+      const tokenFontSize = isScaleDifferent ? Math.round(fontSize * baseScale * (token.sizeMultiplier || 1)) : undefined;
+
       const style = [
         inheritStyle,
         {
-          fontSize: tokenFontSize,
-          lineHeight: Math.round(tokenFontSize * 1.6),
-          color: token.link ? colors.primary : colors.text,
+          color: token.link ? colors.primary : inheritStyle.color || colors.text,
           fontWeight: token.bold ? '700' : inheritStyle.fontWeight || '400',
-          fontStyle: token.italic ? 'italic' : 'normal',
+          fontStyle: token.italic ? 'italic' : inheritStyle.fontStyle || 'normal',
           textDecorationLine: token.link ? 'underline' : 'none',
         },
       ];
+
+      // Only assign fontSize to span if scaled, never apply lineHeight to inner child spans
+      if (tokenFontSize) {
+        style.push({ fontSize: tokenFontSize });
+      }
 
       if (token.link) {
         return (
@@ -226,7 +233,10 @@ export default function RichArticleRenderer({
       {blocks.map((block, bIdx) => {
         try {
           if (block.type === 'heading') {
-            const headingScale = block.level === 1 ? 1.5 : block.level === 2 ? 1.3 : 1.15;
+            const headingScale = block.level === 1 ? 1.45 : block.level === 2 ? 1.25 : 1.12;
+            const headingSize = Math.round(fontSize * headingScale);
+            const headingLineHeight = Math.round(headingSize * 1.35);
+
             return (
               <View key={`b_${bIdx}`} style={styles.headingBlock}>
                 <Text
@@ -235,14 +245,15 @@ export default function RichArticleRenderer({
                     {
                       color: colors.text,
                       fontFamily: typography.fontSerif,
-                      fontSize: Math.round(fontSize * headingScale),
-                      lineHeight: Math.round(fontSize * headingScale * 1.35),
+                      fontSize: headingSize,
+                      lineHeight: headingLineHeight,
                     },
                   ]}
                 >
                   {renderTokens(block.tokens, headingScale, {
                     fontWeight: '800',
                     fontFamily: typography.fontSerif,
+                    color: colors.text,
                   })}
                 </Text>
               </View>
@@ -250,6 +261,9 @@ export default function RichArticleRenderer({
           }
 
           if (block.type === 'blockquote') {
+            const quoteSize = Math.round(fontSize * 1.05);
+            const quoteLineHeight = Math.round(quoteSize * 1.55);
+
             return (
               <View
                 key={`b_${bIdx}`}
@@ -262,7 +276,16 @@ export default function RichArticleRenderer({
                 ]}
               >
                 <Quote size={20} color={colors.primary} style={styles.quoteIcon} />
-                <Text style={styles.quoteText}>
+                <Text
+                  style={[
+                    styles.quoteText,
+                    {
+                      color: colors.text,
+                      fontSize: quoteSize,
+                      lineHeight: quoteLineHeight,
+                    },
+                  ]}
+                >
                   {renderTokens(block.tokens, 1.05, {
                     fontStyle: 'italic',
                     color: colors.text,
@@ -273,15 +296,35 @@ export default function RichArticleRenderer({
           }
 
           if (block.type === 'list') {
+            const itemLineHeight = Math.round(fontSize * 1.6);
+
             return (
               <View key={`b_${bIdx}`} style={styles.listContainer}>
                 {block.items.map((itemTokens, itemIdx) => (
                   <View key={`li_${itemIdx}`} style={styles.listItemRow}>
-                    <Text style={[styles.listBullet, { color: colors.primary, fontSize }]}>
+                    <Text
+                      style={[
+                        styles.listBullet,
+                        {
+                          color: colors.primary,
+                          fontSize,
+                          lineHeight: itemLineHeight,
+                        },
+                      ]}
+                    >
                       {block.ordered ? `${itemIdx + 1}.` : '•'}
                     </Text>
-                    <Text style={styles.listItemText}>
-                      {renderTokens(itemTokens, 1)}
+                    <Text
+                      style={[
+                        styles.listItemText,
+                        {
+                          color: colors.text,
+                          fontSize,
+                          lineHeight: itemLineHeight,
+                        },
+                      ]}
+                    >
+                      {renderTokens(itemTokens, 1, { color: colors.text })}
                     </Text>
                   </View>
                 ))}
@@ -309,10 +352,20 @@ export default function RichArticleRenderer({
           }
 
           // Default: Paragraph
+          const paraLineHeight = Math.round(fontSize * 1.6);
           return (
             <View key={`b_${bIdx}`} style={styles.paragraphBlock}>
-              <Text style={styles.paragraphText}>
-                {renderTokens(block.tokens, 1)}
+              <Text
+                style={[
+                  styles.paragraphText,
+                  {
+                    color: colors.text,
+                    fontSize,
+                    lineHeight: paraLineHeight,
+                  },
+                ]}
+              >
+                {renderTokens(block.tokens, 1, { color: colors.text })}
               </Text>
             </View>
           );

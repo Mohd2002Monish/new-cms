@@ -98,7 +98,7 @@ export default function FloatingMiniPlayer({ onOpenFullPlayer }) {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 50, // sits directly on top of the tab bar
+    bottom: 54, // sits cleanly on top of the 54px tab bar
     left: 0,
     right: 0,
     height: 60,

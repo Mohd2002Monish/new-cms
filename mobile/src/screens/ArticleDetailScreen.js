@@ -262,8 +262,28 @@ export default function ArticleDetailScreen({ route, navigation }) {
           </Text>
         ) : null}
 
-        {/* Article Body: Rich Editorial Typography with Headings, Quotes, Links */}
-        {article.contentHtml ? (
+        {/* Article Body: Rich Editorial Typography or Locked Paywall State */}
+        {article.isLocked ? (
+          <View style={[styles.paywallBox, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+            <Text style={[styles.paywallTitle, { color: colors.text }]}>
+              {article.lockReason === 'limit_exceeded'
+                ? 'Monthly Reading Limit Reached'
+                : 'Subscriber Exclusive Dispatch'}
+            </Text>
+            <Text style={[styles.paywallSub, { color: colors.textSecondary }]}>
+              {article.lockReason === 'limit_exceeded'
+                ? 'You have read all 5 free monthly articles. Sign in with your account for uninterrupted access.'
+                : 'Sign in to read full investigative reports and long-form analysis.'}
+            </Text>
+            <TouchableOpacity
+              style={[styles.paywallBtn, { backgroundColor: colors.primary }]}
+              onPress={() => navigation.navigate('LoginModal')}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.paywallBtnText}>Sign In with Google / Email</Text>
+            </TouchableOpacity>
+          </View>
+        ) : article.contentHtml ? (
           <RichArticleRenderer
             contentHtml={article.contentHtml}
             fontSize={fontSize}
@@ -496,6 +516,35 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 12,
+  },
+  paywallBox: {
+    padding: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginVertical: 20,
+    alignItems: 'center',
+  },
+  paywallTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  paywallSub: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  paywallBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  paywallBtnText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
 

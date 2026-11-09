@@ -279,14 +279,22 @@ export const getPublicArticleBySlug = async (req, res, next) => {
       // Metered views check
       if (user) {
         if (!user.isPremiumUser) {
-          const hasRead = user.readArticles && user.readArticles.includes(post.slug);
+          const readList = Array.isArray(user.readArticles) ? user.readArticles : [];
+          const hasRead = readList.includes(post.slug);
           if (!hasRead) {
-            if (user.monthlyViewsCount >= monthlyLimit) {
+            const currentViews = typeof user.monthlyViewsCount === 'number' && !isNaN(user.monthlyViewsCount) ? user.monthlyViewsCount : 0;
+            if (currentViews >= monthlyLimit) {
               paywallLocked = true;
               lockReason = 'limit_exceeded';
             } else {
-              user.monthlyViewsCount += 1;
-              await user.save();
+              user.monthlyViewsCount = currentViews + 1;
+              if (!Array.isArray(user.readArticles)) user.readArticles = [];
+              user.readArticles.push(post.slug);
+              try {
+                await user.save();
+              } catch (saveErr) {
+                console.warn('[paywall] Failed to save user views count:', saveErr.message);
+              }
             }
           }
         }

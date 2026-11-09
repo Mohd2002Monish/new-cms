@@ -4,6 +4,11 @@ import newsApi from '../api/newsApi';
 import audioApi from '../api/audioApi';
 import { stripHtml } from '../utils/formatters';
 import logger from '../utils/logger';
+import {
+  initMediaNotifications,
+  updateMediaNotification,
+  dismissMediaNotification,
+} from '../utils/mediaNotificationManager';
 
 // Dynamic import for expo-av to support web and environments without native av
 let ExpoAudio = null;
@@ -98,6 +103,7 @@ export function AudioPlaylistProvider({ children }) {
     setIsPlaying(false);
     setPositionMillis(0);
     setDurationMillis(0);
+    dismissMediaNotification().catch(() => {});
   }, []);
 
   // Load and play a specific story track from the playlist
@@ -419,6 +425,51 @@ export function AudioPlaylistProvider({ children }) {
   }, []);
 
   const currentStory = playlist[currentIndex] || null;
+
+  // Sync Media Player Notification in Android Notification Shade & Lock Screen
+  useEffect(() => {
+    initMediaNotifications().catch(() => {});
+
+    if (!currentStory) {
+      dismissMediaNotification().catch(() => {});
+      return;
+    }
+
+    updateMediaNotification({
+      title: currentStory.title,
+      categoryName: currentStory.category?.name,
+      isPlaying,
+      storyIndex: currentIndex,
+      totalStories: playlist.length || 1,
+    }).catch(() => {});
+  }, [isPlaying, currentIndex, currentStory, playlist.length]);
+
+  // Handle remote Play / Pause / Next taps from Android Notification bar
+  useEffect(() => {
+    let Notifications = null;
+    try {
+      Notifications = require('expo-notifications');
+    } catch (_) {}
+
+    if (!Notifications || typeof Notifications.addNotificationResponseReceivedListener !== 'function') {
+      return;
+    }
+
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const actionId = response.actionIdentifier;
+      if (actionId === 'play' || actionId === 'pause') {
+        playPause();
+      } else if (actionId === 'next') {
+        playNext();
+      }
+    });
+
+    return () => {
+      if (sub && typeof sub.remove === 'function') {
+        sub.remove();
+      }
+    };
+  }, [playPause, playNext]);
 
   return (
     <AudioPlaylistContext.Provider
